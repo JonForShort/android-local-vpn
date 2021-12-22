@@ -16,7 +16,7 @@ plugins {
 
 android {
     compileSdk 32
-    ndkVersion "23.1.7779620"
+    ndkVersion "21.1.6352462"
 
     defaultConfig {
         minSdk 26
@@ -54,8 +54,8 @@ dependencies {
 apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
 
 cargo {
-    module = "src/main/rust/smoltcp"
-    libname = "smoltcp"
+    module = "src/main/rust/vpn"
+    libname = "vpn"
     targets = ["arm64", "x86_64"]
 }
 
