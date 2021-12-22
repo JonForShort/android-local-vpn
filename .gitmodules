@@ -1,0 +1,4 @@
+[submodule "source/vpn/src/main/rust/smoltcp"]
+        path = source/vpn/src/main/rust/smoltcp
+        url = git@github.com:smoltcp-rs/smoltcp.git
+        ignore = dirty
