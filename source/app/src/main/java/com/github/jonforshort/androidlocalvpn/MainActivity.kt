@@ -26,53 +26,104 @@
 //
 package com.github.jonforshort.androidlocalvpn
 
+import android.content.Intent
+import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
 import androidx.compose.material.Switch
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.MutableLiveData
 import com.github.jonforshort.androidlocalvpn.ui.theme.AndroidLocalVpnTheme
+import com.github.jonforshort.androidlocalvpn.vpn.isVpnRunning
+import com.github.jonforshort.androidlocalvpn.vpn.startVpn
+import com.github.jonforshort.androidlocalvpn.vpn.stopVpn
 
 class MainActivity : ComponentActivity() {
+
+    private val vpnState = MutableLiveData(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             AndroidLocalVpnTheme {
                 Surface(color = MaterialTheme.colors.background) {
-                    VpnState()
+                    VpnState(
+                        vpnState.observeAsState(),
+                        ::onVpnStateChanged
+                    )
                 }
             }
+        }
+
+        vpnState.postValue(isVpnRunning(this))
+    }
+
+    private fun onVpnStateChanged(vpnEnabled: Boolean) {
+        if (vpnEnabled) {
+            prepareVpn()
+        } else {
+            stopVpn(this)
+            vpnState.postValue(false)
+        }
+    }
+
+    private fun prepareVpn() {
+        val vpnIntent = VpnService.prepare(this)
+        if (vpnIntent != null) {
+            startActivityForResult(vpnIntent, LOCAL_VPN_REQUEST_CODE)
+        } else {
+            onActivityResult(LOCAL_VPN_REQUEST_CODE, RESULT_OK, null)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == LOCAL_VPN_REQUEST_CODE && resultCode == RESULT_OK) {
+            startVpn(this)
+            vpnState.postValue(true)
         }
     }
 }
 
+private const val LOCAL_VPN_REQUEST_CODE = 1000
+
 @Composable
-fun VpnState() {
-    val checkedState = remember { mutableStateOf(true) }
-    Row {
-        Text(text = "Enable VPN")
-        Spacer(modifier = Modifier.requiredWidth(16.dp))
+private fun VpnState(
+    isVpnEnabled: State<Boolean?> = mutableStateOf(false),
+    onVpnEnabledChanged: (Boolean) -> Unit = {}
+) {
+    Row(
+        modifier = Modifier
+            .height(IntrinsicSize.Max)
+            .padding(10.dp)
+            .fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    )
+    {
+        Text(
+            text = "Enable VPN",
+        )
         Switch(
-            checked = checkedState.value,
-            onCheckedChange = { checkedState.value = it }
+            checked = isVpnEnabled.value ?: false,
+            onCheckedChange = { onVpnEnabledChanged(it) },
         )
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun DefaultPreview() {
+private fun DefaultPreview() {
     AndroidLocalVpnTheme {
         VpnState()
     }
