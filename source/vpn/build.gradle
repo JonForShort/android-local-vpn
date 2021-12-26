@@ -40,6 +40,9 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
+    packagingOptions {
+        doNotStrip "**/*.so"
+    }
 }
 
 dependencies {
