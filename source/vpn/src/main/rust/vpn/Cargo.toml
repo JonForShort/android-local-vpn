@@ -9,3 +9,5 @@ crate-type = ["dylib"]
 [dependencies]
 smoltcp = { path = "../smoltcp", version = "0.8.0" }
 jni = { version = "0.19.0", default-features = false }
+android_logger = "0.10.1"
+log = "0.4.14"

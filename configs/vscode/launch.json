@@ -1,0 +1,17 @@
+{
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "custom",
+            "name": "Attach Remote",
+            "targetCreateCommands": [
+                "target create ./../vpn/target/debug/libvpn.so"
+            ],
+            "processCreateCommands": [
+                "platform select remote-android",
+                "platform connect connect://localhost:9999",
+                "attach 3755"
+            ]
+        }
+    ]
+}
