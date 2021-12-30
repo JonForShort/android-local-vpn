@@ -10,6 +10,7 @@ pub mod android {
     use android_logger::Config;
     use log::trace;
     use log::Level;
+    use std::process;
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_initializeNative(
@@ -21,7 +22,7 @@ pub mod android {
                 .with_tag("nativeVpn")
                 .with_min_level(Level::Trace),
         );
-        trace!("initializing native");
+        trace!("initializing native, pid={}", process::id());
     }
 
     #[no_mangle]

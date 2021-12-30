@@ -5,13 +5,21 @@
             "request": "custom",
             "name": "Attach Remote",
             "targetCreateCommands": [
-                "target create ./../vpn/target/debug/libvpn.so"
+                "target create ./../vpn/target/x86_64-linux-android/debug/libvpn.so"
             ],
             "processCreateCommands": [
                 "platform select remote-android",
                 "platform connect connect://localhost:9999",
-                "attach 3755"
+                "attach ${input:processId}"
             ]
+        }
+    ],
+    "inputs": [
+        {
+            "id": "processId",
+            "type": "promptString",
+            "default": "",
+            "description": "Enter process ID for android application."
         }
     ]
 }
