@@ -12,8 +12,10 @@ pub mod android {
     use log::Level;
     use std::process;
 
+    static mut FILE_DESCRIPTOR: i32 = -1;
+
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_initializeNative(
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(
         _: JNIEnv,
         _: JClass,
     ) {
@@ -22,14 +24,33 @@ pub mod android {
                 .with_tag("nativeVpn")
                 .with_min_level(Level::Trace),
         );
-        trace!("initializing native, pid={}", process::id());
+        trace!("onCreateNative")
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_uninitializeNative(
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onDestroyNative(
         _: JNIEnv,
         _: JClass,
     ) {
-        trace!("uninitializing native");
+        trace!("onDestroyNative");
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(
+        _: JNIEnv,
+        _: JClass,
+        file_descriptor: i32,
+    ) {
+        trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
+        FILE_DESCRIPTOR = file_descriptor;
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStopVpn(
+        _: JNIEnv,
+        _: JClass,
+    ) {
+        trace!("onStopVpn, pid={}, fd={}", process::id(), FILE_DESCRIPTOR);
+        libc::close(FILE_DESCRIPTOR);
     }
 }

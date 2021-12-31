@@ -94,6 +94,7 @@ class LocalVpnService : VpnService() {
         } catch (e: IOException) {
             e(e, "unable to close parcel file descriptor")
         }
+        onStopVpn()
         stopForeground(true)
         stopSelf()
     }
@@ -102,7 +103,8 @@ class LocalVpnService : VpnService() {
         super.onCreate()
         d("onCreate called")
         setUpVpnInterface()
-        initializeNative()
+        onCreateNative()
+        onStartVpn(vpnInterface.detachFd())
     }
 
     private fun setUpVpnInterface() {
@@ -112,19 +114,23 @@ class LocalVpnService : VpnService() {
         vpnServiceBuilder.addAddress(VPN_ADDRESS, 32)
         vpnServiceBuilder.addRoute(VPN_ROUTE, 0)
 
-        val vpnName = "LocalVpnService"
         vpnInterface = vpnServiceBuilder
-            .setSession(vpnName)
+            .setBlocking(false)
+            .setSession("LocalVpnService")
             .establish()!!
     }
 
     override fun onDestroy() {
         super.onDestroy()
         d("onDestroy called")
-        uninitializeNative()
+        onDestroyNative()
     }
 
-    private external fun initializeNative()
+    private external fun onCreateNative()
 
-    private external fun uninitializeNative()
+    private external fun onDestroyNative()
+
+    private external fun onStartVpn(fileDescriptor: Int)
+
+    private external fun onStopVpn()
 }
