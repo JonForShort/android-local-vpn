@@ -1,3 +1,5 @@
+mod vpn;
+
 #[allow(non_snake_case)]
 pub mod android {
     extern crate android_logger;
@@ -7,12 +9,15 @@ pub mod android {
     use self::jni::objects::JClass;
     use self::jni::JNIEnv;
 
+    use crate::vpn::vpn;
     use android_logger::Config;
     use log::trace;
     use log::Level;
     use std::process;
 
-    static mut FILE_DESCRIPTOR: i32 = -1;
+    static mut VPN: vpn::Vpn = vpn::Vpn {
+        file_descriptor: -1,
+    };
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(
@@ -24,7 +29,7 @@ pub mod android {
                 .with_tag("nativeVpn")
                 .with_min_level(Level::Trace),
         );
-        trace!("onCreateNative")
+        trace!("onCreateNative");
     }
 
     #[no_mangle]
@@ -42,7 +47,10 @@ pub mod android {
         file_descriptor: i32,
     ) {
         trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
-        FILE_DESCRIPTOR = file_descriptor;
+        VPN = vpn::Vpn {
+            file_descriptor: file_descriptor,
+        };
+        VPN.on_start();
     }
 
     #[no_mangle]
@@ -50,7 +58,7 @@ pub mod android {
         _: JNIEnv,
         _: JClass,
     ) {
-        trace!("onStopVpn, pid={}, fd={}", process::id(), FILE_DESCRIPTOR);
-        libc::close(FILE_DESCRIPTOR);
+        trace!("onStopVpn, pid={}", process::id());
+        VPN.on_stop();
     }
 }
