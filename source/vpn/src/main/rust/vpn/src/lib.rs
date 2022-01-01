@@ -1,5 +1,8 @@
 mod vpn;
 
+#[macro_use]
+extern crate lazy_static;
+
 #[allow(non_snake_case)]
 pub mod android {
     extern crate android_logger;
@@ -9,15 +12,20 @@ pub mod android {
     use self::jni::objects::JClass;
     use self::jni::JNIEnv;
 
-    use crate::vpn::vpn;
+    use crate::vpn::vpn::Vpn;
     use android_logger::Config;
-    use log::trace;
-    use log::Level;
     use std::process;
+    use std::sync::Mutex;
 
-    static mut VPN: vpn::Vpn = vpn::Vpn {
-        file_descriptor: -1,
-    };
+    lazy_static! {
+        static ref VPN: Mutex<Option<Vpn>> = Mutex::new(None);
+    }
+
+    macro_rules! vpn {
+        () => {{
+            VPN.lock().unwrap().as_ref().unwrap()
+        }};
+    }
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(
@@ -27,9 +35,9 @@ pub mod android {
         android_logger::init_once(
             Config::default()
                 .with_tag("nativeVpn")
-                .with_min_level(Level::Trace),
+                .with_min_level(log::Level::Trace),
         );
-        trace!("onCreateNative");
+        log::trace!("onCreateNative");
     }
 
     #[no_mangle]
@@ -37,7 +45,7 @@ pub mod android {
         _: JNIEnv,
         _: JClass,
     ) {
-        trace!("onDestroyNative");
+        log::trace!("onDestroyNative");
     }
 
     #[no_mangle]
@@ -46,11 +54,9 @@ pub mod android {
         _: JClass,
         file_descriptor: i32,
     ) {
-        trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
-        VPN = vpn::Vpn {
-            file_descriptor: file_descriptor,
-        };
-        VPN.on_start();
+        log::trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
+        update_vpn(file_descriptor);
+        vpn!().start();
     }
 
     #[no_mangle]
@@ -58,7 +64,12 @@ pub mod android {
         _: JNIEnv,
         _: JClass,
     ) {
-        trace!("onStopVpn, pid={}", process::id());
-        VPN.on_stop();
+        log::trace!("onStopVpn, pid={}", process::id());
+        vpn!().stop();
+    }
+
+    fn update_vpn(file_descriptor: i32) {
+        let mut vpn = VPN.lock().unwrap();
+        *vpn = Some(Vpn::new(file_descriptor));
     }
 }
