@@ -1,3 +1,5 @@
+mod vpn_device;
+
 pub mod vpn {
 
     extern crate log;
