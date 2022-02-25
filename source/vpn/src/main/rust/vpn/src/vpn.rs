@@ -1,9 +1,11 @@
+mod mio_helper;
 mod vpn_device;
 
 pub mod vpn {
 
     extern crate log;
 
+    use super::mio_helper::MioHelper;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::thread::JoinHandle;
@@ -32,10 +34,13 @@ pub mod vpn {
             log::trace!("starting vpn thread");
             self.is_thread_running.store(true, Ordering::SeqCst);
             let is_thread_running = self.is_thread_running.clone();
+            let file_descriptor = self.file_descriptor;
             self.thread_handle = Some(std::thread::spawn(move || {
+                let mut mio_helper = MioHelper::new(file_descriptor, 256);
                 while is_thread_running.load(Ordering::SeqCst) {
-                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    mio_helper.poll();
                 }
+                log::trace!("vpn thread is stopping");
             }));
         }
 
