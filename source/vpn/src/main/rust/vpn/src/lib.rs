@@ -23,7 +23,7 @@ pub mod android {
 
     macro_rules! vpn {
         () => {{
-            VPN.lock().unwrap().as_ref().unwrap()
+            VPN.lock().unwrap().as_mut().unwrap()
         }};
     }
 
