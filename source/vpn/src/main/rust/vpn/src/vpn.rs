@@ -1,3 +1,28 @@
+// This is free and unencumbered software released into the public domain.
+//
+// Anyone is free to copy, modify, publish, use, compile, sell, or
+// distribute this software, either in source code form or as a compiled
+// binary, for any purpose, commercial or non-commercial, and by any
+// means.
+//
+// In jurisdictions that recognize copyright laws, the author or authors
+// of this software dedicate any and all copyright interest in the
+// software to the public domain. We make this dedication for the benefit
+// of the public at large and to the detriment of our heirs and
+// successors. We intend this dedication to be an overt act of
+// relinquishment in perpetuity of all present and future rights to this
+// software under copyright law.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+// IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+// OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+// ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+// OTHER DEALINGS IN THE SOFTWARE.
+//
+// For more information, please refer to <https://unlicense.org>
+
 mod mio_helper;
 mod vpn_device;
 
@@ -34,11 +59,11 @@ pub mod vpn {
             log::trace!("starting vpn thread");
             self.is_thread_running.store(true, Ordering::SeqCst);
             let is_thread_running = self.is_thread_running.clone();
-            let file_descriptor = self.file_descriptor;
+            let file_descriptor = unsafe { libc::dup(self.file_descriptor) };
             self.thread_handle = Some(std::thread::spawn(move || {
                 let mut mio_helper = MioHelper::new(file_descriptor, 256);
                 while is_thread_running.load(Ordering::SeqCst) {
-                    mio_helper.poll();
+                    mio_helper.poll(Some(std::time::Duration::from_secs(1)));
                 }
                 log::trace!("vpn thread is stopping");
             }));
