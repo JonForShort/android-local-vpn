@@ -28,7 +28,7 @@ extern crate log;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use std::fs::File;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::os::unix::io::FromRawFd;
 
 const TOKEN: Token = Token(0);
@@ -68,23 +68,44 @@ impl MioHelper {
         }
     }
 
-    fn process_events(mut file: &File, events: &Events) {
+    fn process_events(file: &File, events: &Events) {
         for (i, event) in events.iter().enumerate() {
             assert_eq!(event.token(), TOKEN);
             assert_eq!(event.is_readable(), true);
 
             log::trace!("processing event #{:?}", i);
 
-            let mut bytes = [0; BUFFER_READ_SIZE];
-            let read_result = file.read(&mut bytes[..]);
+            let read_result = MioHelper::read_all_from_file(file);
+            if let Some(bytes) = read_result {
+                log::trace!("read {:?} total bytes from file", bytes.len());
+            }
+        }
+    }
+
+    fn read_all_from_file(mut file: &File) -> Option<Vec<u8>> {
+        let mut bytes: Vec<u8> = Vec::new();
+        let mut read_buffer = [0; BUFFER_READ_SIZE];
+        loop {
+            let read_result = file.read(&mut read_buffer[..]);
             match read_result {
                 Ok(read_bytes_count) => {
-                    log::trace!("read {:?} bytes from stream", read_bytes_count);
+                    log::trace!("read {:?} bytes from file", read_bytes_count);
+                    if read_bytes_count == 0 {
+                        log::trace!("done reading bytes from file");
+                        break;
+                    }
+                    bytes.extend_from_slice(&read_buffer[..read_bytes_count]);
                 }
                 Err(error_code) => {
-                    log::trace!("failed to read stream, error={:?}", error_code);
+                    if error_code.kind() == ErrorKind::WouldBlock {
+                        break;
+                    } else {
+                        log::trace!("failed to read file, error={:?}", error_code);
+                        return None;
+                    }
                 }
             }
         }
+        return Some(bytes);
     }
 }
