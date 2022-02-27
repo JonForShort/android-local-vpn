@@ -23,69 +23,74 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
+mod ip_layer_processor;
 mod mio_helper;
+mod mpsc_helper;
+mod session_manager;
+mod tcp_layer_processor;
 mod vpn_device;
 
 pub mod vpn {
 
     extern crate log;
 
-    use super::mio_helper::MioHelper;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
-    use std::thread::JoinHandle;
+    use super::ip_layer_processor::IpLayerProcessor;
+    use super::session_manager::SessionManager;
+    use super::tcp_layer_processor::TcpLayerProcessor;
+    use std::sync::mpsc;
 
     pub struct Vpn {
         file_descriptor: i32,
-        thread_handle: Option<JoinHandle<()>>,
-        is_thread_running: Arc<AtomicBool>,
+        ip_layer_processor: IpLayerProcessor,
+        tcp_layer_processor: TcpLayerProcessor,
+        session_manager: SessionManager,
     }
 
     impl Vpn {
         pub fn new(file_descriptor: i32) -> Self {
+            let ip_layer_channels = mpsc::channel();
+            let tcp_layer_channels = mpsc::channel();
+            let session_manager_tcp_layer_channels = mpsc::channel();
+            let session_manager_ip_layer_channels = mpsc::channel();
+
+            let session_manager = SessionManager::new(
+                (ip_layer_channels.0, session_manager_ip_layer_channels.1),
+                (tcp_layer_channels.0, session_manager_tcp_layer_channels.1),
+            );
+            let tcp_layer_processor = TcpLayerProcessor::new((
+                session_manager_tcp_layer_channels.0,
+                tcp_layer_channels.1,
+            ));
+            let ip_layer_processor = IpLayerProcessor::new(
+                file_descriptor,
+                (session_manager_ip_layer_channels.0, ip_layer_channels.1),
+            );
+
             Self {
                 file_descriptor: file_descriptor,
-                thread_handle: None,
-                is_thread_running: Arc::new(AtomicBool::new(false)),
+                ip_layer_processor: ip_layer_processor,
+                tcp_layer_processor: tcp_layer_processor,
+                session_manager: session_manager,
             }
         }
 
         pub fn start(&mut self) {
             log::trace!("starting native vpn");
-            self.start_thread();
-        }
-
-        fn start_thread(&mut self) {
-            log::trace!("starting vpn thread");
-            self.is_thread_running.store(true, Ordering::SeqCst);
-            let is_thread_running = self.is_thread_running.clone();
-            let file_descriptor = unsafe { libc::dup(self.file_descriptor) };
-            self.thread_handle = Some(std::thread::spawn(move || {
-                let mut mio_helper = MioHelper::new(file_descriptor, 256);
-                while is_thread_running.load(Ordering::SeqCst) {
-                    mio_helper.poll(Some(std::time::Duration::from_secs(1)));
-                }
-                log::trace!("vpn thread is stopping");
-            }));
+            self.ip_layer_processor.start();
+            self.tcp_layer_processor.start();
+            self.session_manager.start();
+            log::trace!("started native vpn");
         }
 
         pub fn stop(&mut self) {
             log::trace!("stopping native vpn");
-            self.stop_thread();
+            self.ip_layer_processor.stop();
+            self.tcp_layer_processor.stop();
+            self.session_manager.stop();
             unsafe {
                 libc::close(self.file_descriptor);
             }
-        }
-
-        fn stop_thread(&mut self) {
-            log::trace!("stopping vpn thread");
-            self.is_thread_running.store(false, Ordering::SeqCst);
-            self.thread_handle
-                .take()
-                .expect("failed to stop thread; thread is not running")
-                .join()
-                .expect("failed to join thread");
-            log::trace!("vpn thread is stopped");
+            log::trace!("stopped native vpn");
         }
     }
 }

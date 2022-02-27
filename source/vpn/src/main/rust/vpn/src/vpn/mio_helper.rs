@@ -30,18 +30,21 @@ use mio::{Events, Interest, Poll, Token};
 use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::os::unix::io::FromRawFd;
+use std::sync::mpsc::Sender;
 
 const TOKEN: Token = Token(0);
 const BUFFER_READ_SIZE: usize = 256;
+const EVENTS_SIZE: usize = 16;
 
 pub struct MioHelper {
     file: File,
     poll: Poll,
     events: Events,
+    incoming_data_sender_channel: Sender<Vec<u8>>,
 }
 
 impl MioHelper {
-    pub fn new(file_descriptor: i32, capacity: usize) -> MioHelper {
+    pub fn new(file_descriptor: i32, incoming_data_sender_channel: Sender<Vec<u8>>) -> MioHelper {
         let poll = Poll::new().unwrap();
         poll.registry()
             .register(&mut SourceFd(&file_descriptor), TOKEN, Interest::READABLE)
@@ -50,7 +53,8 @@ impl MioHelper {
         MioHelper {
             file: unsafe { File::from_raw_fd(file_descriptor) },
             poll: poll,
-            events: Events::with_capacity(capacity),
+            events: Events::with_capacity(EVENTS_SIZE),
+            incoming_data_sender_channel: incoming_data_sender_channel,
         }
     }
 
@@ -60,7 +64,18 @@ impl MioHelper {
             Ok(_) => {
                 let events_count = self.events.iter().count();
                 log::trace!("vpn thread polled for {:?} events", events_count);
-                MioHelper::process_events(&self.file, &self.events);
+                let received_bytes = MioHelper::process_events(&self.file, &self.events);
+                for bytes in received_bytes {
+                    let send_result = self.incoming_data_sender_channel.send(bytes);
+                    match send_result {
+                        Ok(_) => {
+                            // nothing to do here.
+                        }
+                        Err(error) => {
+                            log::error!("failed to send data, error={:?}", error)
+                        }
+                    }
+                }
             }
             Err(error_code) => {
                 log::error!("failed to poll, error={:?}", error_code);
@@ -68,18 +83,19 @@ impl MioHelper {
         }
     }
 
-    fn process_events(file: &File, events: &Events) {
+    fn process_events(file: &File, events: &Events) -> Vec<Vec<u8>> {
+        let mut events_data = Vec::new();
         for (i, event) in events.iter().enumerate() {
             assert_eq!(event.token(), TOKEN);
             assert_eq!(event.is_readable(), true);
-
             log::trace!("processing event #{:?}", i);
-
             let read_result = MioHelper::read_all_from_file(file);
             if let Some(bytes) = read_result {
                 log::trace!("read {:?} total bytes from file", bytes.len());
+                events_data.push(bytes);
             }
         }
+        return events_data;
     }
 
     fn read_all_from_file(mut file: &File) -> Option<Vec<u8>> {
