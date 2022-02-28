@@ -23,7 +23,11 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
+extern crate smoltcp;
+
 use super::mpsc_helper::{Channels, SyncChannels};
+use smoltcp::wire::IpProtocol;
+use smoltcp::wire::{Ipv4Packet, TcpPacket};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::TryRecvError;
 use std::sync::Arc;
@@ -65,11 +69,8 @@ impl SessionManager {
     fn process_incoming_ip_layer_data(channels: SyncChannels) {
         let receive_result = channels.lock().unwrap().1.try_recv();
         match receive_result {
-            Ok(incoming_data) => {
-                log::trace!(
-                    "processing incoming ip layer data, count={:?}",
-                    incoming_data.len()
-                );
+            Ok(bytes) => {
+                SessionManager::log_packet(&bytes);
             }
             Err(error) => {
                 if error == TryRecvError::Empty {
@@ -82,6 +83,32 @@ impl SessionManager {
                     );
                 }
             }
+        }
+    }
+
+    fn log_packet(bytes: &Vec<u8>) {
+        let ip_packet = Ipv4Packet::new_checked(&bytes).expect("truncated ip packet");
+        if ip_packet.protocol() == IpProtocol::Tcp {
+            let tcp_bytes = ip_packet.payload();
+            let tcp_packet = TcpPacket::new_checked(tcp_bytes).expect("invalid tcp packet");
+            log::trace!(
+                "tcp packet, ip_length=[{:?}], tcp_length=[{:?}], src_ip=[{:?}], src_port=[{:?}], dst_ip=[{:?}], dst_port=[{:?}], protocol=[{:?}]",
+                bytes.len(),
+                tcp_bytes.len(),
+                ip_packet.src_addr(),
+                tcp_packet.src_port(),
+                ip_packet.dst_addr(),
+                tcp_packet.dst_port(),
+                ip_packet.protocol()
+            )
+        } else {
+            log::trace!(
+                "ip packet, ip_length=[{:?}], src_ip=[{:?}], dst_ip=[{:?}], protocol=[{:?}]",
+                bytes.len(),
+                ip_packet.src_addr(),
+                ip_packet.dst_addr(),
+                ip_packet.protocol()
+            );
         }
     }
 
