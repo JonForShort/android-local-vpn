@@ -28,17 +28,31 @@ extern crate smoltcp;
 use super::mpsc_helper::{Channels, SyncChannels};
 use smoltcp::wire::IpProtocol;
 use smoltcp::wire::{Ipv4Packet, TcpPacket};
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::TryRecvError;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
+type Sessions = HashMap<Session, i32>;
+
 pub struct SessionManager {
     ip_layer_channels: SyncChannels,
     tcp_layer_channels: SyncChannels,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
+}
+
+#[derive(PartialEq, Eq, Hash, Debug)]
+struct Session {
+    src_ip: [u8; 4],
+    src_port: u16,
+    dst_ip: [u8; 4],
+    dst_port: u16,
+    protocol: u8,
 }
 
 impl SessionManager {
@@ -58,19 +72,34 @@ impl SessionManager {
         let ip_layer_channels = self.ip_layer_channels.clone();
         let tcp_layer_channels = self.tcp_layer_channels.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
+            let mut sessions: Sessions = HashMap::new();
             while is_thread_running.load(Ordering::SeqCst) {
-                SessionManager::process_incoming_ip_layer_data(ip_layer_channels.clone());
-                SessionManager::process_incoming_tcp_layer_data(tcp_layer_channels.clone());
+                SessionManager::process_incoming_ip_layer_data(
+                    &mut sessions,
+                    ip_layer_channels.clone(),
+                );
+                SessionManager::process_incoming_tcp_layer_data(
+                    &mut sessions,
+                    tcp_layer_channels.clone(),
+                );
             }
             log::trace!("session manager is stopping");
         }));
     }
 
-    fn process_incoming_ip_layer_data(channels: SyncChannels) {
+    fn process_incoming_ip_layer_data(sessions: &mut Sessions, channels: SyncChannels) {
         let receive_result = channels.lock().unwrap().1.try_recv();
         match receive_result {
             Ok(bytes) => {
                 SessionManager::log_packet(&bytes);
+                if let Some(session) = SessionManager::build_session(&bytes) {
+                    if sessions.contains_key(&session) {
+                        log::trace!("session already exists, session=[{:?}]", session);
+                    } else {
+                        log::trace!("starting new session, session=[{:?}]", session);
+                        sessions.insert(session, 0);
+                    }
+                }
             }
             Err(error) => {
                 if error == TryRecvError::Empty {
@@ -83,6 +112,25 @@ impl SessionManager {
                     );
                 }
             }
+        }
+    }
+
+    fn build_session(bytes: &Vec<u8>) -> Option<Session> {
+        let ip_packet = Ipv4Packet::new_checked(&bytes).expect("truncated ip packet");
+        if ip_packet.protocol() == IpProtocol::Tcp {
+            let payload = ip_packet.payload();
+            let tcp_packet = TcpPacket::new_checked(payload).expect("invalid tcp packet");
+            let src_ip_bytes = ip_packet.src_addr().as_bytes().clone().try_into().unwrap();
+            let dst_ip_bytes = ip_packet.dst_addr().as_bytes().clone().try_into().unwrap();
+            Some(Session {
+                src_ip: src_ip_bytes,
+                src_port: tcp_packet.src_port(),
+                dst_ip: dst_ip_bytes,
+                dst_port: tcp_packet.dst_port(),
+                protocol: u8::from(ip_packet.protocol()),
+            })
+        } else {
+            None
         }
     }
 
@@ -112,7 +160,7 @@ impl SessionManager {
         }
     }
 
-    fn process_incoming_tcp_layer_data(channels: SyncChannels) {
+    fn process_incoming_tcp_layer_data(_sessions: &mut Sessions, channels: SyncChannels) {
         let receive_result = channels.lock().unwrap().1.try_recv();
         match receive_result {
             Ok(incoming_data) => {
