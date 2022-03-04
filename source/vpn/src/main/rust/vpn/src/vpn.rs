@@ -26,6 +26,7 @@
 mod ip_layer_processor;
 mod mio_helper;
 mod mpsc_helper;
+mod session;
 mod session_manager;
 mod tcp_layer_processor;
 mod vpn_device;

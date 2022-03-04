@@ -26,33 +26,25 @@
 extern crate smoltcp;
 
 use super::mpsc_helper::{Channels, SyncChannels};
-use smoltcp::wire::IpProtocol;
-use smoltcp::wire::{Ipv4Packet, TcpPacket};
+use super::session::{Session, SessionData};
+use smoltcp::socket::TcpSocket;
+use smoltcp::time::Instant;
+use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::TryRecvError;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
-type Sessions = HashMap<Session, i32>;
+type Sessions<'a> = HashMap<Session, SessionData<'a>>;
 
 pub struct SessionManager {
     ip_layer_channels: SyncChannels,
     tcp_layer_channels: SyncChannels,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
-}
-
-#[derive(PartialEq, Eq, Hash, Debug)]
-struct Session {
-    src_ip: [u8; 4],
-    src_port: u16,
-    dst_ip: [u8; 4],
-    dst_port: u16,
-    protocol: u8,
 }
 
 impl SessionManager {
@@ -97,7 +89,15 @@ impl SessionManager {
                         log::trace!("session already exists, session=[{:?}]", session);
                     } else {
                         log::trace!("starting new session, session=[{:?}]", session);
-                        sessions.insert(session, 0);
+                        sessions.insert(session.clone(), SessionData::new());
+                    };
+                    if let Some(session_data) = sessions.get_mut(&session) {
+                        let interface = session_data.interface();
+                        interface.device_mut().rx_queue.push_back(bytes);
+                        let is_packets_ready = interface.poll(Instant::now()).unwrap();
+                        if is_packets_ready {
+                            log::trace!("session is ready, session[{:?}]", session);
+                        }
                     }
                 }
             }

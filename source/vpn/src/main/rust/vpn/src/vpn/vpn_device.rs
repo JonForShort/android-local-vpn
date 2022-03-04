@@ -23,35 +23,82 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-pub mod vpn_device {
+extern crate smoltcp;
 
-    extern crate smoltcp;
+use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
+use smoltcp::time::Instant;
+use smoltcp::Result;
+use std::collections::VecDeque;
 
-    use smoltcp::phy::{ChecksumCapabilities, Device, DeviceCapabilities, Medium, RawSocket};
+#[derive(Debug)]
+pub struct VpnDevice {
+    pub rx_queue: VecDeque<Vec<u8>>,
+    pub tx_queue: VecDeque<Vec<u8>>,
+}
 
-    struct VpnDevice {
-        socket: RawSocket,
+impl<'a> VpnDevice {
+    pub fn new() -> VpnDevice {
+        VpnDevice {
+            rx_queue: VecDeque::new(),
+            tx_queue: VecDeque::new(),
+        }
+    }
+}
+
+impl<'a> Device<'a> for VpnDevice {
+    type RxToken = RxToken;
+    type TxToken = TxToken<'a>;
+
+    fn capabilities(&self) -> DeviceCapabilities {
+        let mut default = DeviceCapabilities::default();
+        default.max_transmission_unit = 65535;
+        default.medium = Medium::Ip;
+        return default;
     }
 
-    impl<'a> Device<'a> for VpnDevice {
-        type RxToken = <RawSocket as Device<'a>>::RxToken;
-        type TxToken = <RawSocket as Device<'a>>::TxToken;
+    fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
+        self.rx_queue.pop_front().map(move |buffer| {
+            let rx = RxToken { buffer };
+            let tx = TxToken {
+                queue: &mut self.tx_queue,
+            };
+            (rx, tx)
+        })
+    }
 
-        fn capabilities(&self) -> DeviceCapabilities {
-            let mut capabilities = DeviceCapabilities::default();
-            capabilities.max_transmission_unit = 1500;
-            capabilities.max_burst_size = None;
-            capabilities.medium = Medium::Ip;
-            capabilities.checksum = ChecksumCapabilities::default();
-            return capabilities;
-        }
+    fn transmit(&'a mut self) -> Option<Self::TxToken> {
+        Some(TxToken {
+            queue: &mut self.tx_queue,
+        })
+    }
+}
 
-        fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
-            return self.socket.receive();
-        }
+pub struct RxToken {
+    buffer: Vec<u8>,
+}
 
-        fn transmit(&'a mut self) -> Option<Self::TxToken> {
-            return self.socket.transmit();
-        }
+impl<'a> phy::RxToken for RxToken {
+    fn consume<R, F>(mut self, _timestamp: Instant, f: F) -> Result<R>
+    where
+        F: FnOnce(&mut [u8]) -> Result<R>,
+    {
+        f(&mut self.buffer)
+    }
+}
+
+pub struct TxToken<'a> {
+    queue: &'a mut VecDeque<Vec<u8>>,
+}
+
+impl<'a> phy::TxToken for TxToken<'a> {
+    fn consume<R, F>(self, _timestamp: Instant, len: usize, f: F) -> Result<R>
+    where
+        F: FnOnce(&mut [u8]) -> Result<R>,
+    {
+        let mut buffer = Vec::new();
+        buffer.resize(len, 0);
+        let result = f(&mut buffer);
+        self.queue.push_back(buffer);
+        result
     }
 }
