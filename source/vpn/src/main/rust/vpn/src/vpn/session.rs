@@ -24,8 +24,12 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::vpn_device::VpnDevice;
-use smoltcp::iface::{Interface, InterfaceBuilder, SocketHandle};
+use smoltcp::iface::{Context, Interface, InterfaceBuilder, Routes, SocketHandle};
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
+use smoltcp::wire::IpEndpoint;
+use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
+use std::collections::btree_map::BTreeMap;
+use std::fmt;
 use std::hash::Hash;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
@@ -37,26 +41,68 @@ pub struct Session {
     pub protocol: u8,
 }
 
+impl fmt::Display for Session {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "{}:{}->{}:{}",
+            ip_octet_to_string(&self.src_ip),
+            self.src_port,
+            ip_octet_to_string(&self.dst_ip),
+            self.dst_port
+        )
+    }
+}
+
+fn ip_octet_to_string(ip: &[u8; 4]) -> String {
+    ip.iter().map(|&i| i.to_string() + ".").collect()
+}
+
 pub struct SessionData<'a> {
     interface: Interface<'a, VpnDevice>,
     socket_handle: SocketHandle,
 }
 
 impl<'a> SessionData<'a> {
-    pub fn new() -> SessionData<'a> {
-        let socket = SessionData::create_tcp_socket();
-        let mut interface = InterfaceBuilder::new(VpnDevice::new(), vec![]).finalize();
-        let socket_handle = interface.add_socket(socket);
+    pub fn new(session: &Session) -> SessionData<'a> {
+        let mut interface = InterfaceBuilder::new(VpnDevice::new(), vec![])
+            .any_ip(true)
+            .ip_addrs([IpCidr::new(IpAddress::v4(10, 0, 0, 2), 8)])
+            .routes(SessionData::create_routes())
+            .finalize();
+        let socket_handle = interface.add_socket(SessionData::create_tcp_socket());
+        let (socket, context) = interface.get_socket_and_context::<TcpSocket<'a>>(socket_handle);
+        SessionData::connect_session(session, socket, context);
         SessionData {
             interface: interface,
             socket_handle: socket_handle,
         }
     }
 
+    fn create_routes() -> Routes<'a> {
+        let mut routes = Routes::new(BTreeMap::new());
+        let default_gateway_ipv4 = Ipv4Address::new(10, 0, 0, 2);
+        routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
+        return routes;
+    }
+
     fn create_tcp_socket() -> TcpSocket<'a> {
         let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 1024]);
         let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 1024]);
         return TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
+    }
+
+    fn connect_session(session: &Session, socket: &mut TcpSocket, context: &mut Context) {
+        let src_ip = Ipv4Address::from_bytes(&session.src_ip);
+        let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
+        let connect_result = socket.connect(
+            context,
+            IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port),
+            IpEndpoint::new(IpAddress::from(src_ip), session.src_port),
+        );
+        if let Err(_) = connect_result {
+            log::error!("failed to connect to session, session=[{}]", session);
+        }
     }
 
     pub fn interface(&mut self) -> &mut Interface<'a, VpnDevice> {

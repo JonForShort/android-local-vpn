@@ -27,7 +27,7 @@ extern crate smoltcp;
 
 use super::mpsc_helper::{Channels, SyncChannels};
 use super::session::{Session, SessionData};
-use smoltcp::socket::TcpSocket;
+use core::str;
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 use std::collections::HashMap;
@@ -66,7 +66,7 @@ impl SessionManager {
         self.thread_join_handle = Some(std::thread::spawn(move || {
             let mut sessions: Sessions = HashMap::new();
             while is_thread_running.load(Ordering::SeqCst) {
-                SessionManager::process_incoming_ip_layer_data(
+                SessionManager::process_outgoing_ip_layer_data(
                     &mut sessions,
                     ip_layer_channels.clone(),
                 );
@@ -74,14 +74,37 @@ impl SessionManager {
                     &mut sessions,
                     tcp_layer_channels.clone(),
                 );
+                SessionManager::poll_sessions(&mut sessions);
             }
             log::trace!("session manager is stopping");
         }));
     }
 
-    fn process_incoming_ip_layer_data(sessions: &mut Sessions, channels: SyncChannels) {
-        let receive_result = channels.lock().unwrap().1.try_recv();
-        match receive_result {
+    fn poll_sessions(sessions: &mut Sessions) {
+        for (session, session_data) in sessions.iter_mut() {
+            let interface = session_data.interface();
+            let is_packets_ready = interface.poll(Instant::now()).unwrap();
+            if is_packets_ready {
+                log::trace!("[{}] session is ready", session);
+                let tcp_socket = session_data.tcp_socket();
+                if tcp_socket.can_recv() {
+                    log::trace!("[{}] socket can receive", session);
+                    let receive_result =
+                        tcp_socket.recv(|buffer| (buffer.len(), str::from_utf8(buffer).unwrap()));
+                    if let Ok(buffer) = receive_result {
+                        log::trace!("[{}] received in tcp socket buffer {:?}", session, buffer)
+                    }
+                }
+                let device = session_data.interface().device_mut();
+                log::trace!("[{}] rx_queue size {}", session, device.rx_queue.len());
+                log::trace!("[{}] tx_queue size {}", session, device.tx_queue.len());
+            }
+        }
+    }
+
+    fn process_outgoing_ip_layer_data(sessions: &mut Sessions, channels: SyncChannels) {
+        let result = channels.lock().unwrap().1.try_recv();
+        match result {
             Ok(bytes) => {
                 SessionManager::log_packet(&bytes);
                 if let Some(session) = SessionManager::build_session(&bytes) {
@@ -89,15 +112,11 @@ impl SessionManager {
                         log::trace!("session already exists, session=[{:?}]", session);
                     } else {
                         log::trace!("starting new session, session=[{:?}]", session);
-                        sessions.insert(session.clone(), SessionData::new());
+                        sessions.insert(session.clone(), SessionData::new(&session));
                     };
                     if let Some(session_data) = sessions.get_mut(&session) {
                         let interface = session_data.interface();
                         interface.device_mut().rx_queue.push_back(bytes);
-                        let is_packets_ready = interface.poll(Instant::now()).unwrap();
-                        if is_packets_ready {
-                            log::trace!("session is ready, session[{:?}]", session);
-                        }
                     }
                 }
             }
@@ -107,7 +126,7 @@ impl SessionManager {
                     std::thread::sleep(std::time::Duration::from_millis(500))
                 } else {
                     log::error!(
-                        "failed to receive incoming ip layer data, error={:?}",
+                        "failed to receive outgoing ip layer data, error={:?}",
                         error
                     );
                 }
