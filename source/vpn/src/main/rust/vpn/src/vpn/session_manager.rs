@@ -89,10 +89,18 @@ impl SessionManager {
                 let tcp_socket = session_data.tcp_socket();
                 if tcp_socket.can_recv() {
                     log::trace!("[{}] socket can receive", session);
-                    let receive_result =
+                    let result =
                         tcp_socket.recv(|buffer| (buffer.len(), str::from_utf8(buffer).unwrap()));
-                    if let Ok(buffer) = receive_result {
+                    if let Ok(buffer) = result {
                         log::trace!("[{}] received in tcp socket buffer {:?}", session, buffer)
+                    }
+                }
+                if tcp_socket.can_send() {
+                    log::trace!("[{}] socket can send", session);
+                    let result =
+                        tcp_socket.send(|buffer| (buffer.len(), str::from_utf8(buffer).unwrap()));
+                    if let Ok(buffer) = result {
+                        log::trace!("[{}] send in tcp socket buffer {:?}", session, buffer)
                     }
                 }
                 let device = session_data.interface().device_mut();
@@ -116,7 +124,7 @@ impl SessionManager {
                     };
                     if let Some(session_data) = sessions.get_mut(&session) {
                         let interface = session_data.interface();
-                        interface.device_mut().rx_queue.push_back(bytes);
+                        interface.device_mut().tx_queue.push_back(bytes);
                     }
                 }
             }

@@ -103,7 +103,7 @@ class LocalVpnService : VpnService() {
         super.onCreate()
         d("onCreate called")
         setUpVpnInterface()
-        onCreateNative()
+        onCreateNative(this)
         onStartVpn(vpnInterface.detachFd())
     }
 
@@ -126,7 +126,7 @@ class LocalVpnService : VpnService() {
         onDestroyNative()
     }
 
-    private external fun onCreateNative()
+    private external fun onCreateNative(vpnService: VpnService)
 
     private external fun onDestroyNative()
 

@@ -23,6 +23,9 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
+#[macro_use]
+mod socket_protector;
+
 mod vpn;
 
 #[macro_use]
@@ -34,9 +37,10 @@ pub mod android {
     extern crate jni;
     extern crate log;
 
-    use self::jni::objects::JClass;
+    use self::jni::objects::{JClass, JObject};
     use self::jni::JNIEnv;
 
+    use crate::socket_protector::socket_protector::SocketProtector;
     use crate::vpn::vpn::Vpn;
     use android_logger::Config;
     use std::process;
@@ -47,15 +51,16 @@ pub mod android {
     }
 
     macro_rules! vpn {
-        () => {{
+        () => {
             VPN.lock().unwrap().as_mut().unwrap()
-        }};
+        };
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(
-        _: JNIEnv,
-        _: JClass,
+        env: JNIEnv,
+        class: JClass,
+        object: JObject,
     ) {
         android_logger::init_once(
             Config::default()
@@ -63,6 +68,7 @@ pub mod android {
                 .with_min_level(log::Level::Trace),
         );
         log::trace!("onCreateNative");
+        SocketProtector::init(env, class, object);
     }
 
     #[no_mangle]
@@ -71,6 +77,7 @@ pub mod android {
         _: JClass,
     ) {
         log::trace!("onDestroyNative");
+        SocketProtector::release();
     }
 
     #[no_mangle]
@@ -81,6 +88,7 @@ pub mod android {
     ) {
         log::trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
         update_vpn(file_descriptor);
+        socket_protector!().start();
         vpn!().start();
     }
 
@@ -91,6 +99,7 @@ pub mod android {
     ) {
         log::trace!("onStopVpn, pid={}", process::id());
         vpn!().stop();
+        socket_protector!().stop();
     }
 
     fn update_vpn(file_descriptor: i32) {
