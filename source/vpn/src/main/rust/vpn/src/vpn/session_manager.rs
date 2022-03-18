@@ -26,7 +26,8 @@
 extern crate smoltcp;
 
 use super::mpsc_helper::{Channels, SyncChannels};
-use super::session::{Session, SessionData};
+use super::session::Session;
+use super::session_data::SessionData;
 use core::str;
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
