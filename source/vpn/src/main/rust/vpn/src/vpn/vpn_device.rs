@@ -25,6 +25,7 @@
 
 extern crate smoltcp;
 
+use super::packet_helper::log_packet;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
 use smoltcp::Result;
@@ -98,6 +99,7 @@ impl<'a> phy::TxToken for TxToken<'a> {
         let mut buffer = Vec::new();
         buffer.resize(len, 0);
         let result = f(&mut buffer);
+        log_packet("consuming tx token", &buffer);
         self.queue.push_back(buffer);
         result
     }

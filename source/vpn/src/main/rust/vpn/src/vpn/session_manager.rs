@@ -26,6 +26,7 @@
 extern crate smoltcp;
 
 use super::mpsc_helper::{Channels, SyncChannels};
+use super::packet_helper::log_packet;
 use super::session::Session;
 use super::session_data::SessionData;
 use core::str;
@@ -115,7 +116,7 @@ impl SessionManager {
         let result = channels.lock().unwrap().1.try_recv();
         match result {
             Ok(bytes) => {
-                SessionManager::log_packet(&bytes);
+                log_packet("outgoing ip packet", &bytes);
                 if let Some(session) = SessionManager::build_session(&bytes) {
                     if sessions.contains_key(&session) {
                         log::trace!("session already exists, session=[{:?}]", session);
@@ -123,10 +124,15 @@ impl SessionManager {
                         log::trace!("starting new session, session=[{:?}]", session);
                         sessions.insert(session.clone(), SessionData::new(&session));
                     };
-                    if let Some(session_data) = sessions.get_mut(&session) {
-                        let interface = session_data.interface();
-                        interface.device_mut().tx_queue.push_back(bytes);
-                    }
+                    //
+                    // Temporarily disabling code that pushes outgoing packets to queue.
+                    //
+                    // if let Some(session_data) = sessions.get_mut(&session) {
+                    //     let interface = session_data.interface();
+                    //     interface.device_mut().tx_queue.push_back(bytes);
+                    // } else {
+                    //     log::error!("unable to find session; session is expected to be created.")
+                    // }
                 }
             }
             Err(error) => {
@@ -159,32 +165,6 @@ impl SessionManager {
             })
         } else {
             None
-        }
-    }
-
-    fn log_packet(bytes: &Vec<u8>) {
-        let ip_packet = Ipv4Packet::new_checked(&bytes).expect("truncated ip packet");
-        if ip_packet.protocol() == IpProtocol::Tcp {
-            let tcp_bytes = ip_packet.payload();
-            let tcp_packet = TcpPacket::new_checked(tcp_bytes).expect("invalid tcp packet");
-            log::trace!(
-                "tcp packet, ip_length=[{:?}], tcp_length=[{:?}], src_ip=[{:?}], src_port=[{:?}], dst_ip=[{:?}], dst_port=[{:?}], protocol=[{:?}]",
-                bytes.len(),
-                tcp_bytes.len(),
-                ip_packet.src_addr(),
-                tcp_packet.src_port(),
-                ip_packet.dst_addr(),
-                tcp_packet.dst_port(),
-                ip_packet.protocol()
-            )
-        } else {
-            log::trace!(
-                "ip packet, ip_length=[{:?}], src_ip=[{:?}], dst_ip=[{:?}], protocol=[{:?}]",
-                bytes.len(),
-                ip_packet.src_addr(),
-                ip_packet.dst_addr(),
-                ip_packet.protocol()
-            );
         }
     }
 

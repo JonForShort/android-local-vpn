@@ -26,6 +26,7 @@
 mod ip_layer_processor;
 mod mio_helper;
 mod mpsc_helper;
+mod packet_helper;
 mod session;
 mod session_data;
 mod session_manager;
