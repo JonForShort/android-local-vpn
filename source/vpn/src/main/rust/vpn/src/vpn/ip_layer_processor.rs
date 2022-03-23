@@ -51,9 +51,9 @@ impl IpLayerProcessor {
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
         let file_descriptor = self.file_descriptor;
-        let channels = self.channels.0.clone();
+        let channels = self.channels.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
-            let mut mio_helper = MioHelper::new(file_descriptor, channels);
+            let mut mio_helper = MioHelper::new(file_descriptor, channels.0, channels.1);
             while is_thread_running.load(Ordering::SeqCst) {
                 mio_helper.poll(Some(std::time::Duration::from_secs(1)));
             }

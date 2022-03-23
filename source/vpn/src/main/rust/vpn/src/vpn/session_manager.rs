@@ -25,7 +25,7 @@
 
 extern crate smoltcp;
 
-use super::mpsc_helper::{Channels, SyncChannels};
+use super::mpsc_helper::{Channels, SyncChannels, TryRecvError};
 use super::packet_helper::log_packet;
 use super::session::Session;
 use super::session_data::SessionData;
@@ -35,7 +35,6 @@ use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::TryRecvError;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::JoinHandle;

@@ -23,9 +23,11 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::sync::Mutex;
 
+pub type Sender<T> = crossbeam::channel::Sender<T>;
+pub type Receiver<T> = crossbeam::channel::Receiver<T>;
+pub type TryRecvError = crossbeam::channel::TryRecvError;
 pub type Channels = (Sender<Vec<u8>>, Receiver<Vec<u8>>);
 pub type SyncChannels = Arc<Mutex<Channels>>;

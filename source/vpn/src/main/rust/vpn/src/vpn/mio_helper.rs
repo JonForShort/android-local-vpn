@@ -25,12 +25,12 @@
 
 extern crate log;
 
+use super::mpsc_helper::{Receiver, Sender, TryRecvError};
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use std::fs::File;
-use std::io::{ErrorKind, Read};
+use std::io::{ErrorKind, Read, Write};
 use std::os::unix::io::FromRawFd;
-use std::sync::mpsc::Sender;
 
 const TOKEN: Token = Token(0);
 const BUFFER_READ_SIZE: usize = 256;
@@ -40,25 +40,35 @@ pub struct MioHelper {
     file: File,
     poll: Poll,
     events: Events,
-    incoming_data_sender_channel: Sender<Vec<u8>>,
+    outgoing_data_sender: Sender<Vec<u8>>,
+    incoming_data_receiver: Receiver<Vec<u8>>,
 }
 
 impl MioHelper {
-    pub fn new(file_descriptor: i32, incoming_data_sender_channel: Sender<Vec<u8>>) -> MioHelper {
+    pub fn new(
+        file_descriptor: i32,
+        outgoing_data_sender: Sender<Vec<u8>>,
+        incoming_data_receiver: Receiver<Vec<u8>>,
+    ) -> MioHelper {
         let poll = Poll::new().unwrap();
         poll.registry()
             .register(&mut SourceFd(&file_descriptor), TOKEN, Interest::READABLE)
             .expect("register file descriptor for polling");
-
         MioHelper {
             file: unsafe { File::from_raw_fd(file_descriptor) },
             poll: poll,
             events: Events::with_capacity(EVENTS_SIZE),
-            incoming_data_sender_channel: incoming_data_sender_channel,
+            outgoing_data_sender: outgoing_data_sender,
+            incoming_data_receiver: incoming_data_receiver,
         }
     }
 
     pub fn poll(&mut self, timeout: Option<std::time::Duration>) {
+        self.poll_outgoing_data(timeout);
+        self.poll_incoming_data();
+    }
+
+    fn poll_outgoing_data(&mut self, timeout: Option<std::time::Duration>) {
         let poll_result = self.poll.poll(&mut self.events, timeout);
         match poll_result {
             Ok(_) => {
@@ -66,7 +76,7 @@ impl MioHelper {
                 log::trace!("vpn thread polled for {:?} events", events_count);
                 let received_bytes = MioHelper::process_events(&self.file, &self.events);
                 for bytes in received_bytes {
-                    let send_result = self.incoming_data_sender_channel.send(bytes);
+                    let send_result = self.outgoing_data_sender.send(bytes);
                     match send_result {
                         Ok(_) => {
                             // nothing to do here.
@@ -79,6 +89,37 @@ impl MioHelper {
             }
             Err(error_code) => {
                 log::error!("failed to poll, error={:?}", error_code);
+            }
+        }
+    }
+
+    fn poll_incoming_data(&mut self) {
+        let result = self.incoming_data_receiver.try_recv();
+        match result {
+            Ok(bytes) => {
+                log::trace!("vpn thread received data");
+                match self.file.write_all(&bytes[..]) {
+                    Ok(_) => {
+                        // nothing to do here.
+                    }
+                    Err(error_code) => {
+                        log::error!(
+                            "failed to write bytes to file descriptor, error=[{:?}]",
+                            error_code
+                        );
+                    }
+                }
+            }
+            Err(error) => {
+                if error == TryRecvError::Empty {
+                    // wait for before trying again.
+                    std::thread::sleep(std::time::Duration::from_millis(500))
+                } else {
+                    log::error!(
+                        "failed to receive outgoing ip layer data, error={:?}",
+                        error
+                    );
+                }
             }
         }
     }

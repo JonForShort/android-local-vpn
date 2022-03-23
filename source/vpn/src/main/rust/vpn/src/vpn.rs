@@ -40,7 +40,7 @@ pub mod vpn {
     use super::ip_layer_processor::IpLayerProcessor;
     use super::session_manager::SessionManager;
     use super::tcp_layer_processor::TcpLayerProcessor;
-    use std::sync::mpsc;
+    use crossbeam::channel::unbounded;
 
     pub struct Vpn {
         file_descriptor: i32,
@@ -51,10 +51,10 @@ pub mod vpn {
 
     impl Vpn {
         pub fn new(file_descriptor: i32) -> Self {
-            let ip_layer_channels = mpsc::channel();
-            let tcp_layer_channels = mpsc::channel();
-            let session_manager_tcp_layer_channels = mpsc::channel();
-            let session_manager_ip_layer_channels = mpsc::channel();
+            let ip_layer_channels = unbounded();
+            let tcp_layer_channels = unbounded();
+            let session_manager_tcp_layer_channels = unbounded();
+            let session_manager_ip_layer_channels = unbounded();
 
             let session_manager = SessionManager::new(
                 (ip_layer_channels.0, session_manager_ip_layer_channels.1),
