@@ -75,13 +75,13 @@ impl SessionManager {
                     &mut sessions,
                     tcp_layer_channels.clone(),
                 );
-                SessionManager::poll_sessions(&mut sessions);
+                SessionManager::poll_sessions(&mut sessions, ip_layer_channels.clone());
             }
             log::trace!("session manager is stopping");
         }));
     }
 
-    fn poll_sessions(sessions: &mut Sessions) {
+    fn poll_sessions(sessions: &mut Sessions, channels: SyncChannels) {
         for (session, session_data) in sessions.iter_mut() {
             let interface = session_data.interface();
             let is_packets_ready = interface.poll(Instant::now()).unwrap();
@@ -107,6 +107,12 @@ impl SessionManager {
                 let device = session_data.interface().device_mut();
                 log::trace!("[{}] rx_queue size {}", session, device.rx_queue.len());
                 log::trace!("[{}] tx_queue size {}", session, device.tx_queue.len());
+                let channels = channels.lock().unwrap();
+                for bytes in device.tx_queue.pop_front() {
+                    if let Err(error) = channels.0.send(bytes.clone()) {
+                        log::error!("failed to send bytes to ip layer, error=[{:?}]", error);
+                    }
+                }
             }
         }
     }
@@ -123,15 +129,12 @@ impl SessionManager {
                         log::trace!("starting new session, session=[{:?}]", session);
                         sessions.insert(session.clone(), SessionData::new(&session));
                     };
-                    //
-                    // Temporarily disabling code that pushes outgoing packets to queue.
-                    //
-                    // if let Some(session_data) = sessions.get_mut(&session) {
-                    //     let interface = session_data.interface();
-                    //     interface.device_mut().tx_queue.push_back(bytes);
-                    // } else {
-                    //     log::error!("unable to find session; session is expected to be created.")
-                    // }
+                    if let Some(session_data) = sessions.get_mut(&session) {
+                        let interface = session_data.interface();
+                        interface.device_mut().rx_queue.push_back(bytes);
+                    } else {
+                        log::error!("unable to find session; session is expected to be created.")
+                    }
                 }
             }
             Err(error) => {

@@ -68,9 +68,9 @@ impl<'a> SessionData<'a> {
     fn connect_session(session: &Session, socket: &mut TcpSocket, context: &mut Context) {
         let src_ip = Ipv4Address::from_bytes(&session.src_ip);
         let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
-        let remote_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
-        let local_endpoint = IpEndpoint::new(IpAddress::from(src_ip), session.src_port);
-        let connect_result = socket.connect(context, remote_endpoint, local_endpoint);
+        let src_endpoint = IpEndpoint::new(IpAddress::from(src_ip), session.src_port);
+        let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
+        let connect_result = socket.connect(context, src_endpoint, dst_endpoint);
         if let Err(_) = connect_result {
             log::error!("failed to connect to session, session=[{}]", session);
         }

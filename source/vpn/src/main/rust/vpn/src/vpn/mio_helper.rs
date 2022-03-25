@@ -100,7 +100,7 @@ impl MioHelper {
                 log::trace!("vpn thread received data");
                 match self.file.write_all(&bytes[..]) {
                     Ok(_) => {
-                        // nothing to do here.
+                        log::trace!("successfully wrote bytes to file descriptor")
                     }
                     Err(error_code) => {
                         log::error!(
