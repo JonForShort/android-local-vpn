@@ -29,5 +29,5 @@ use std::sync::Mutex;
 pub type Sender<T> = crossbeam::channel::Sender<T>;
 pub type Receiver<T> = crossbeam::channel::Receiver<T>;
 pub type TryRecvError = crossbeam::channel::TryRecvError;
-pub type Channels = (Sender<Vec<u8>>, Receiver<Vec<u8>>);
-pub type SyncChannels = Arc<Mutex<Channels>>;
+pub type Channels<T> = (Sender<T>, Receiver<T>);
+pub type SyncChannels<T> = Arc<Mutex<Channels<T>>>;

@@ -42,14 +42,17 @@ use std::thread::JoinHandle;
 type Sessions<'a> = HashMap<Session, SessionData<'a>>;
 
 pub struct SessionManager {
-    ip_layer_channels: SyncChannels,
-    tcp_layer_channels: SyncChannels,
+    ip_layer_channels: SyncChannels<Vec<u8>>,
+    tcp_layer_channels: SyncChannels<(Session, Vec<u8>)>,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl SessionManager {
-    pub fn new(ip_layer_channels: Channels, tcp_layer_channels: Channels) -> SessionManager {
+    pub fn new(
+        ip_layer_channels: Channels<Vec<u8>>,
+        tcp_layer_channels: Channels<(Session, Vec<u8>)>,
+    ) -> SessionManager {
         SessionManager {
             ip_layer_channels: Arc::new(Mutex::new(ip_layer_channels)),
             tcp_layer_channels: Arc::new(Mutex::new(tcp_layer_channels)),
@@ -75,13 +78,21 @@ impl SessionManager {
                     &mut sessions,
                     tcp_layer_channels.clone(),
                 );
-                SessionManager::poll_sessions(&mut sessions, ip_layer_channels.clone());
+                SessionManager::poll_sessions(
+                    &mut sessions,
+                    ip_layer_channels.clone(),
+                    tcp_layer_channels.clone(),
+                );
             }
             log::trace!("session manager is stopping");
         }));
     }
 
-    fn poll_sessions(sessions: &mut Sessions, channels: SyncChannels) {
+    fn poll_sessions(
+        sessions: &mut Sessions,
+        ip_layer_channels: SyncChannels<Vec<u8>>,
+        tcp_layer_channels: SyncChannels<(Session, Vec<u8>)>,
+    ) {
         for (session, session_data) in sessions.iter_mut() {
             let interface = session_data.interface();
             let is_packets_ready = interface.poll(Instant::now()).unwrap();
@@ -98,8 +109,15 @@ impl SessionManager {
                 }
                 if tcp_socket.can_send() {
                     log::trace!("[{}] socket can send", session);
-                    let result =
-                        tcp_socket.send(|buffer| (buffer.len(), str::from_utf8(buffer).unwrap()));
+                    let tcp_layer_channels = tcp_layer_channels.lock().unwrap();
+                    let result = tcp_socket.send(|buffer| {
+                        (
+                            buffer.len(),
+                            tcp_layer_channels
+                                .0
+                                .send((session.clone(), buffer.to_vec())),
+                        )
+                    });
                     if let Ok(buffer) = result {
                         log::trace!("[{}] send in tcp socket buffer {:?}", session, buffer)
                     }
@@ -107,9 +125,9 @@ impl SessionManager {
                 let device = session_data.interface().device_mut();
                 log::trace!("[{}] rx_queue size {}", session, device.rx_queue.len());
                 log::trace!("[{}] tx_queue size {}", session, device.tx_queue.len());
-                let channels = channels.lock().unwrap();
+                let ip_layer_channels = ip_layer_channels.lock().unwrap();
                 for bytes in device.tx_queue.pop_front() {
-                    if let Err(error) = channels.0.send(bytes.clone()) {
+                    if let Err(error) = ip_layer_channels.0.send(bytes.clone()) {
                         log::error!("failed to send bytes to ip layer, error=[{:?}]", error);
                     }
                 }
@@ -117,7 +135,7 @@ impl SessionManager {
         }
     }
 
-    fn process_outgoing_ip_layer_data(sessions: &mut Sessions, channels: SyncChannels) {
+    fn process_outgoing_ip_layer_data(sessions: &mut Sessions, channels: SyncChannels<Vec<u8>>) {
         let result = channels.lock().unwrap().1.try_recv();
         match result {
             Ok(bytes) => {
@@ -170,13 +188,19 @@ impl SessionManager {
         }
     }
 
-    fn process_incoming_tcp_layer_data(_sessions: &mut Sessions, channels: SyncChannels) {
+    fn process_incoming_tcp_layer_data(
+        sessions: &mut Sessions,
+        channels: SyncChannels<(Session, Vec<u8>)>,
+    ) {
         let receive_result = channels.lock().unwrap().1.try_recv();
         match receive_result {
             Ok(incoming_data) => {
+                let received_bytes = incoming_data.1;
+                let session = incoming_data.0;
                 log::trace!(
-                    "processing incoming tcp layer data, count={:?}",
-                    incoming_data.len()
+                    "processing incoming tcp layer data, count={:?}, session={:?}",
+                    received_bytes.len(),
+                    session
                 );
             }
             Err(error) => {

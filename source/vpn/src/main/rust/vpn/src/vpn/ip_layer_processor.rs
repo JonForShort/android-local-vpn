@@ -31,13 +31,13 @@ use std::thread::JoinHandle;
 
 pub struct IpLayerProcessor {
     file_descriptor: i32,
-    channels: Channels,
+    channels: Channels<Vec<u8>>,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl IpLayerProcessor {
-    pub fn new(file_descriptor: i32, channels: Channels) -> IpLayerProcessor {
+    pub fn new(file_descriptor: i32, channels: Channels<Vec<u8>>) -> IpLayerProcessor {
         IpLayerProcessor {
             file_descriptor: file_descriptor,
             channels: channels,

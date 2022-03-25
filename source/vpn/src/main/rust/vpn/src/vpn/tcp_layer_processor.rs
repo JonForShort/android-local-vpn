@@ -24,18 +24,19 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::mpsc_helper::Channels;
+use super::session::Session;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 pub struct TcpLayerProcessor {
-    channel: Channels,
+    channel: Channels<(Session, Vec<u8>)>,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl TcpLayerProcessor {
-    pub fn new(channel: Channels) -> TcpLayerProcessor {
+    pub fn new(channel: Channels<(Session, Vec<u8>)>) -> TcpLayerProcessor {
         TcpLayerProcessor {
             channel: channel,
             is_thread_running: Arc::new(AtomicBool::new(false)),
