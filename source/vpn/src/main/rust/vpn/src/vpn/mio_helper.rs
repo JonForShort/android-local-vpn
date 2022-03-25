@@ -26,14 +26,14 @@
 extern crate log;
 
 use super::mpsc_helper::{Receiver, Sender, TryRecvError};
+use crate::std_ext::fs::FileExt;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use std::fs::File;
-use std::io::{ErrorKind, Read, Write};
+use std::io::Write;
 use std::os::unix::io::FromRawFd;
 
 const TOKEN: Token = Token(0);
-const BUFFER_READ_SIZE: usize = 256;
 const EVENTS_SIZE: usize = 16;
 
 pub struct MioHelper {
@@ -74,7 +74,7 @@ impl MioHelper {
             Ok(_) => {
                 let events_count = self.events.iter().count();
                 log::trace!("vpn thread polled for {:?} events", events_count);
-                let received_bytes = MioHelper::process_events(&self.file, &self.events);
+                let received_bytes = MioHelper::process_events(&mut self.file, &self.events);
                 for bytes in received_bytes {
                     let send_result = self.outgoing_data_sender.send(bytes);
                     match send_result {
@@ -124,45 +124,18 @@ impl MioHelper {
         }
     }
 
-    fn process_events(file: &File, events: &Events) -> Vec<Vec<u8>> {
+    fn process_events(file: &mut File, events: &Events) -> Vec<Vec<u8>> {
         let mut events_data = Vec::new();
         for (i, event) in events.iter().enumerate() {
             assert_eq!(event.token(), TOKEN);
             assert_eq!(event.is_readable(), true);
             log::trace!("processing event #{:?}", i);
-            let read_result = MioHelper::read_all_from_file(file);
+            let read_result = file.read_all_bytes();
             if let Some(bytes) = read_result {
                 log::trace!("read {:?} total bytes from file", bytes.len());
                 events_data.push(bytes);
             }
         }
         return events_data;
-    }
-
-    fn read_all_from_file(mut file: &File) -> Option<Vec<u8>> {
-        let mut bytes: Vec<u8> = Vec::new();
-        let mut read_buffer = [0; BUFFER_READ_SIZE];
-        loop {
-            let read_result = file.read(&mut read_buffer[..]);
-            match read_result {
-                Ok(read_bytes_count) => {
-                    log::trace!("read {:?} bytes from file", read_bytes_count);
-                    if read_bytes_count == 0 {
-                        log::trace!("done reading bytes from file");
-                        break;
-                    }
-                    bytes.extend_from_slice(&read_buffer[..read_bytes_count]);
-                }
-                Err(error_code) => {
-                    if error_code.kind() == ErrorKind::WouldBlock {
-                        break;
-                    } else {
-                        log::trace!("failed to read file, error={:?}", error_code);
-                        return None;
-                    }
-                }
-            }
-        }
-        return Some(bytes);
     }
 }

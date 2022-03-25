@@ -23,6 +23,8 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
+mod std_ext;
+
 #[macro_use]
 mod socket_protector;
 
