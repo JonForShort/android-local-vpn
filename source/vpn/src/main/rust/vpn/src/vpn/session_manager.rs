@@ -25,11 +25,10 @@
 
 extern crate smoltcp;
 
-use super::mpsc_helper::{Channels, SyncChannels, TryRecvError};
+use super::channel_utils::{Channels, SyncChannels, TryRecvError};
 use super::packet_helper::log_packet;
 use super::session::Session;
 use super::session_data::SessionData;
-use core::str;
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 use std::collections::HashMap;
@@ -100,27 +99,18 @@ impl SessionManager {
                 log::trace!("[{}] session is ready", session);
                 let tcp_socket = session_data.tcp_socket();
                 if tcp_socket.can_recv() {
-                    log::trace!("[{}] socket can receive", session);
-                    let result =
-                        tcp_socket.recv(|buffer| (buffer.len(), str::from_utf8(buffer).unwrap()));
-                    if let Ok(buffer) = result {
-                        log::trace!("[{}] received in tcp socket buffer {:?}", session, buffer)
-                    }
+                    log::trace!(
+                        "[{}] socket can receive, queue_size={:?}",
+                        session,
+                        tcp_socket.recv_queue()
+                    );
                 }
                 if tcp_socket.can_send() {
-                    log::trace!("[{}] socket can send", session);
-                    let tcp_layer_channels = tcp_layer_channels.lock().unwrap();
-                    let result = tcp_socket.send(|buffer| {
-                        (
-                            buffer.len(),
-                            tcp_layer_channels
-                                .0
-                                .send((session.clone(), buffer.to_vec())),
-                        )
-                    });
-                    if let Ok(buffer) = result {
-                        log::trace!("[{}] send in tcp socket buffer {:?}", session, buffer)
-                    }
+                    log::trace!(
+                        "[{}] socket can send, queue_size={:?}",
+                        session,
+                        tcp_socket.send_queue()
+                    );
                 }
                 let device = session_data.interface().device_mut();
                 log::trace!("[{}] rx_queue size {}", session, device.rx_queue.len());

@@ -23,7 +23,7 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::mpsc_helper::Channels;
+use super::channel_utils::Channels;
 use super::session::Session;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

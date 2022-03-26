@@ -23,8 +23,7 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::mio_helper::MioHelper;
-use super::mpsc_helper::Channels;
+use super::channel_utils::{Channels, FileDescriptorChannel};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -53,7 +52,8 @@ impl IpLayerProcessor {
         let file_descriptor = self.file_descriptor;
         let channels = self.channels.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
-            let mut mio_helper = MioHelper::new(file_descriptor, channels.0, channels.1);
+            let mut mio_helper =
+                FileDescriptorChannel::new("ip layer", file_descriptor, channels.0, channels.1);
             while is_thread_running.load(Ordering::SeqCst) {
                 mio_helper.poll(Some(std::time::Duration::from_secs(1)));
             }

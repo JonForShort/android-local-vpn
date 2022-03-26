@@ -25,7 +25,16 @@
 
 extern crate log;
 
-use super::mpsc_helper::{Receiver, Sender, TryRecvError};
+use std::sync::Arc;
+use std::sync::Mutex;
+
+pub type Sender<T> = crossbeam::channel::Sender<T>;
+pub type Receiver<T> = crossbeam::channel::Receiver<T>;
+pub type TryRecvError = crossbeam::channel::TryRecvError;
+pub type Channels<T> = (Sender<T>, Receiver<T>);
+pub type SyncChannels<T> = Arc<Mutex<Channels<T>>>;
+
+use super::packet_helper::log_packet;
 use crate::std_ext::fs::FileExt;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
@@ -33,50 +42,60 @@ use std::fs::File;
 use std::io::Write;
 use std::os::unix::io::FromRawFd;
 
-const TOKEN: Token = Token(0);
-const EVENTS_SIZE: usize = 16;
-
-pub struct MioHelper {
+pub struct FileDescriptorChannel {
+    log_tag: String,
     file: File,
     poll: Poll,
     events: Events,
-    outgoing_data_sender: Sender<Vec<u8>>,
-    incoming_data_receiver: Receiver<Vec<u8>>,
+    data_written_sender: Sender<Vec<u8>>,
+    data_read_receiver: Receiver<Vec<u8>>,
 }
 
-impl MioHelper {
+impl FileDescriptorChannel {
+    const TOKEN: Token = Token(0);
+    const EVENTS_SIZE: usize = 16;
+
     pub fn new(
+        log_tag: &str,
         file_descriptor: i32,
-        outgoing_data_sender: Sender<Vec<u8>>,
-        incoming_data_receiver: Receiver<Vec<u8>>,
-    ) -> MioHelper {
+        data_written_sender: Sender<Vec<u8>>,
+        data_read_receiver: Receiver<Vec<u8>>,
+    ) -> FileDescriptorChannel {
         let poll = Poll::new().unwrap();
         poll.registry()
-            .register(&mut SourceFd(&file_descriptor), TOKEN, Interest::READABLE)
+            .register(
+                &mut SourceFd(&file_descriptor),
+                Self::TOKEN,
+                Interest::READABLE,
+            )
             .expect("register file descriptor for polling");
-        MioHelper {
+        FileDescriptorChannel {
+            log_tag: log_tag.to_string(),
             file: unsafe { File::from_raw_fd(file_descriptor) },
             poll: poll,
-            events: Events::with_capacity(EVENTS_SIZE),
-            outgoing_data_sender: outgoing_data_sender,
-            incoming_data_receiver: incoming_data_receiver,
+            events: Events::with_capacity(Self::EVENTS_SIZE),
+            data_written_sender: data_written_sender,
+            data_read_receiver: data_read_receiver,
         }
     }
 
     pub fn poll(&mut self, timeout: Option<std::time::Duration>) {
-        self.poll_outgoing_data(timeout);
-        self.poll_incoming_data();
+        self.poll_written_data(timeout);
+        self.poll_read_data();
     }
 
-    fn poll_outgoing_data(&mut self, timeout: Option<std::time::Duration>) {
+    fn poll_written_data(&mut self, timeout: Option<std::time::Duration>) {
         let poll_result = self.poll.poll(&mut self.events, timeout);
         match poll_result {
             Ok(_) => {
                 let events_count = self.events.iter().count();
-                log::trace!("vpn thread polled for {:?} events", events_count);
-                let received_bytes = MioHelper::process_events(&mut self.file, &self.events);
+                log::trace!("{} : polled for {:?} events", self.log_tag, events_count);
+                let received_bytes =
+                    FileDescriptorChannel::process_events(&mut self.file, &self.events);
                 for bytes in received_bytes {
-                    let send_result = self.outgoing_data_sender.send(bytes);
+                    let log_message = format!("{} : written data", self.log_tag);
+                    log_packet(&log_message[..], &bytes);
+                    let send_result = self.data_written_sender.send(bytes);
                     match send_result {
                         Ok(_) => {
                             // nothing to do here.
@@ -93,11 +112,25 @@ impl MioHelper {
         }
     }
 
-    fn poll_incoming_data(&mut self) {
-        let result = self.incoming_data_receiver.try_recv();
+    fn process_events(file: &mut File, events: &Events) -> Vec<Vec<u8>> {
+        let mut events_data = Vec::new();
+        for (i, event) in events.iter().enumerate() {
+            assert_eq!(event.token(), Self::TOKEN);
+            assert_eq!(event.is_readable(), true);
+            let read_result = file.read_all_bytes();
+            if let Some(bytes) = read_result {
+                events_data.push(bytes);
+            }
+        }
+        return events_data;
+    }
+
+    fn poll_read_data(&mut self) {
+        let result = self.data_read_receiver.try_recv();
         match result {
             Ok(bytes) => {
-                log::trace!("vpn thread received data");
+                let log_message = format!("{} : read data", self.log_tag);
+                log_packet(&log_message[..], &bytes);
                 match self.file.write_all(&bytes[..]) {
                     Ok(_) => {
                         log::trace!("successfully wrote bytes to file descriptor")
@@ -115,27 +148,9 @@ impl MioHelper {
                     // wait for before trying again.
                     std::thread::sleep(std::time::Duration::from_millis(500))
                 } else {
-                    log::error!(
-                        "failed to receive outgoing ip layer data, error={:?}",
-                        error
-                    );
+                    log::error!("failed to receive read data, error={:?}", error);
                 }
             }
         }
-    }
-
-    fn process_events(file: &mut File, events: &Events) -> Vec<Vec<u8>> {
-        let mut events_data = Vec::new();
-        for (i, event) in events.iter().enumerate() {
-            assert_eq!(event.token(), TOKEN);
-            assert_eq!(event.is_readable(), true);
-            log::trace!("processing event #{:?}", i);
-            let read_result = file.read_all_bytes();
-            if let Some(bytes) = read_result {
-                log::trace!("read {:?} total bytes from file", bytes.len());
-                events_data.push(bytes);
-            }
-        }
-        return events_data;
     }
 }
