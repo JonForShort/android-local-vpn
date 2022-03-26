@@ -25,7 +25,7 @@
 
 extern crate smoltcp;
 
-use super::packet_helper::log_packet;
+use crate::smoltcp_ext::wire::log_packet;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
 use smoltcp::Result;

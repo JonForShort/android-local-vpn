@@ -23,12 +23,4 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-mod channel_utils;
-mod ip_layer_processor;
-mod session;
-mod session_data;
-mod session_manager;
-mod tcp_layer_processor;
-mod vpn_device;
-
-pub mod vpn;
+pub mod wire;

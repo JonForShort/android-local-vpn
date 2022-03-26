@@ -26,9 +26,9 @@
 extern crate smoltcp;
 
 use super::channel_utils::{Channels, SyncChannels, TryRecvError};
-use super::packet_helper::log_packet;
 use super::session::Session;
 use super::session_data::SessionData;
+use crate::smoltcp_ext::wire::log_packet;
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 use std::collections::HashMap;

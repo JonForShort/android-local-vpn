@@ -25,6 +25,8 @@
 
 mod std_ext;
 
+mod smoltcp_ext;
+
 #[macro_use]
 mod socket_protector;
 

@@ -25,6 +25,8 @@
 
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 
+extern crate log;
+
 pub fn log_packet(message: &str, bytes: &Vec<u8>) {
     let ip_packet = Ipv4Packet::new_checked(&bytes).expect("truncated ip packet");
     if ip_packet.protocol() == IpProtocol::Tcp {
