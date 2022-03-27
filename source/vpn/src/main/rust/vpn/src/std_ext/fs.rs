@@ -26,25 +26,23 @@
 extern crate log;
 
 use std::fs::File;
-use std::io::{ErrorKind, Read};
+use std::io::{ErrorKind, Read, Result};
 
 const BUFFER_READ_SIZE: usize = 256;
 
 pub trait FileExt {
-    fn read_all_bytes(&mut self) -> Option<Vec<u8>>;
+    fn read_all_bytes(&mut self) -> Result<Vec<u8>>;
 }
 
 impl FileExt for File {
-    fn read_all_bytes(&mut self) -> Option<Vec<u8>> {
+    fn read_all_bytes(&mut self) -> Result<Vec<u8>> {
         let mut bytes: Vec<u8> = Vec::new();
         let mut read_buffer = [0; BUFFER_READ_SIZE];
         loop {
             let read_result = self.read(&mut read_buffer[..]);
             match read_result {
                 Ok(read_bytes_count) => {
-                    log::trace!("read {:?} bytes from file", read_bytes_count);
                     if read_bytes_count == 0 {
-                        log::trace!("done reading bytes from file");
                         break;
                     }
                     bytes.extend_from_slice(&read_buffer[..read_bytes_count]);
@@ -53,12 +51,11 @@ impl FileExt for File {
                     if error_code.kind() == ErrorKind::WouldBlock {
                         break;
                     } else {
-                        log::trace!("failed to read file, error={:?}", error_code);
-                        return None;
+                        return Err(error_code);
                     }
                 }
             }
         }
-        return Some(bytes);
+        return Ok(bytes);
     }
 }

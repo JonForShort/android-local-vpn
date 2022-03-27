@@ -68,19 +68,15 @@ impl SessionManager {
         let tcp_layer_channels = self.tcp_layer_channels.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
             let mut sessions: Sessions = HashMap::new();
+            let ip_layer_channels = ip_layer_channels.lock().unwrap().clone();
+            let tcp_layer_channels = tcp_layer_channels.lock().unwrap().clone();
             while is_thread_running.load(Ordering::SeqCst) {
-                SessionManager::process_outgoing_ip_layer_data(
-                    &mut sessions,
-                    ip_layer_channels.clone(),
-                );
-                SessionManager::process_incoming_tcp_layer_data(
-                    &mut sessions,
-                    tcp_layer_channels.clone(),
-                );
+                SessionManager::process_outgoing_ip_layer_data(&mut sessions, &ip_layer_channels);
+                SessionManager::process_incoming_tcp_layer_data(&mut sessions, &tcp_layer_channels);
                 SessionManager::poll_sessions(
                     &mut sessions,
-                    ip_layer_channels.clone(),
-                    tcp_layer_channels.clone(),
+                    &ip_layer_channels,
+                    &tcp_layer_channels,
                 );
             }
             log::trace!("session manager is stopping");
@@ -89,8 +85,8 @@ impl SessionManager {
 
     fn poll_sessions(
         sessions: &mut Sessions,
-        ip_layer_channels: SyncChannels<Vec<u8>>,
-        tcp_layer_channels: SyncChannels<(Session, Vec<u8>)>,
+        ip_layer_channels: &Channels<Vec<u8>>,
+        tcp_layer_channels: &Channels<(Session, Vec<u8>)>,
     ) {
         for (session, session_data) in sessions.iter_mut() {
             let interface = session_data.interface();
@@ -98,16 +94,30 @@ impl SessionManager {
             if is_packets_ready {
                 log::trace!("[{}] session is ready", session);
                 let tcp_socket = session_data.tcp_socket();
-                if tcp_socket.can_recv() {
+                if tcp_socket.may_recv() {
                     log::trace!(
-                        "[{}] socket can receive, queue_size={:?}",
+                        "[{}] socket may receive, queue_size={:?}",
                         session,
                         tcp_socket.recv_queue()
                     );
+                    let result = tcp_socket.recv(|buffer| {
+                        log::trace!("tcp socket receiving buffer size [{:?}]", buffer.len());
+                        if !buffer.is_empty() {
+                            let tcp_layer_sender = tcp_layer_channels.0.clone();
+                            let tcp_data = (session.clone(), buffer.to_vec());
+                            if let Err(error) = tcp_layer_sender.send(tcp_data) {
+                                log::error!("failed to send tcp buffer, error={:?}", error);
+                            }
+                        }
+                        (buffer.len(), buffer)
+                    });
+                    if let Err(error) = result {
+                        log::error!("failed to receive from tcp socket, error={:?}", error)
+                    }
                 }
-                if tcp_socket.can_send() {
+                if tcp_socket.may_send() {
                     log::trace!(
-                        "[{}] socket can send, queue_size={:?}",
+                        "[{}] socket may send, queue_size={:?}",
                         session,
                         tcp_socket.send_queue()
                     );
@@ -115,7 +125,6 @@ impl SessionManager {
                 let device = session_data.interface().device_mut();
                 log::trace!("[{}] rx_queue size {}", session, device.rx_queue.len());
                 log::trace!("[{}] tx_queue size {}", session, device.tx_queue.len());
-                let ip_layer_channels = ip_layer_channels.lock().unwrap();
                 for bytes in device.tx_queue.pop_front() {
                     if let Err(error) = ip_layer_channels.0.send(bytes.clone()) {
                         log::error!("failed to send bytes to ip layer, error=[{:?}]", error);
@@ -125,8 +134,8 @@ impl SessionManager {
         }
     }
 
-    fn process_outgoing_ip_layer_data(sessions: &mut Sessions, channels: SyncChannels<Vec<u8>>) {
-        let result = channels.lock().unwrap().1.try_recv();
+    fn process_outgoing_ip_layer_data(sessions: &mut Sessions, channels: &Channels<Vec<u8>>) {
+        let result = channels.1.try_recv();
         match result {
             Ok(bytes) => {
                 log_packet("outgoing ip packet", &bytes);
@@ -180,9 +189,9 @@ impl SessionManager {
 
     fn process_incoming_tcp_layer_data(
         sessions: &mut Sessions,
-        channels: SyncChannels<(Session, Vec<u8>)>,
+        channels: &Channels<(Session, Vec<u8>)>,
     ) {
-        let receive_result = channels.lock().unwrap().1.try_recv();
+        let receive_result = channels.1.try_recv();
         match receive_result {
             Ok(incoming_data) => {
                 let received_bytes = incoming_data.1;

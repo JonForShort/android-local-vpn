@@ -116,9 +116,13 @@ impl FileDescriptorChannel {
         for (_, event) in events.iter().enumerate() {
             assert_eq!(event.token(), Self::TOKEN);
             assert_eq!(event.is_readable(), true);
-            let read_result = file.read_all_bytes();
-            if let Some(bytes) = read_result {
-                events_data.push(bytes);
+            match file.read_all_bytes() {
+                Ok(bytes) => {
+                    events_data.push(bytes);
+                }
+                Err(error) => {
+                    log::error!("failed to read all bytes from file, error={:?}", error);
+                }
             }
         }
         return events_data;
@@ -132,7 +136,7 @@ impl FileDescriptorChannel {
                 log_packet(&log_message[..], &bytes);
                 match self.file.write_all(&bytes[..]) {
                     Ok(_) => {
-                        log::trace!("successfully wrote bytes to file descriptor")
+                        // nothing to do here.
                     }
                     Err(error_code) => {
                         log::error!(

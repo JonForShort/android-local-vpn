@@ -23,22 +23,25 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::channel_utils::Channels;
+use super::channel_utils::{Channels, TryRecvError};
 use super::session::Session;
+use crate::smoltcp_ext::wire::log_packet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+type TcpLayerChannels = Channels<(Session, Vec<u8>)>;
+
 pub struct TcpLayerProcessor {
-    channel: Channels<(Session, Vec<u8>)>,
+    channels: TcpLayerChannels,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl TcpLayerProcessor {
-    pub fn new(channel: Channels<(Session, Vec<u8>)>) -> TcpLayerProcessor {
+    pub fn new(channels: TcpLayerChannels) -> TcpLayerProcessor {
         TcpLayerProcessor {
-            channel: channel,
+            channels: channels,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
         }
@@ -48,12 +51,34 @@ impl TcpLayerProcessor {
         log::trace!("starting tcp layer processor");
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
+        let channels = self.channels.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
+            let channels = channels.clone();
             while is_thread_running.load(Ordering::SeqCst) {
-                std::thread::sleep(std::time::Duration::from_secs(1));
+                TcpLayerProcessor::process_incoming_tcp_layer_data(&channels);
             }
             log::trace!("tcp layer processor is stopping");
         }));
+    }
+
+    fn process_incoming_tcp_layer_data(channels: &TcpLayerChannels) {
+        let result = channels.1.try_recv();
+        match result {
+            Ok((_, bytes)) => {
+                log_packet("outgoing tcp layer", &bytes);
+            }
+            Err(error) => {
+                if error == TryRecvError::Empty {
+                    // wait for before trying again.
+                    std::thread::sleep(std::time::Duration::from_millis(500))
+                } else {
+                    log::error!(
+                        "failed to receive outgoing tcp layer data, error={:?}",
+                        error
+                    );
+                }
+            }
+        }
     }
 
     pub fn stop(&mut self) {
