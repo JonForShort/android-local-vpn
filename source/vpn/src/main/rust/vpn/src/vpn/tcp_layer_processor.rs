@@ -23,14 +23,11 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::channel_utils::{Channels, TryRecvError};
-use super::session::Session;
+use super::channel_types::{TcpLayerChannels, TryRecvError};
 use crate::smoltcp_ext::wire::log_packet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-
-type TcpLayerChannels = Channels<(Session, Vec<u8>)>;
 
 pub struct TcpLayerProcessor {
     channels: TcpLayerChannels,
@@ -64,7 +61,7 @@ impl TcpLayerProcessor {
     fn process_incoming_tcp_layer_data(channels: &TcpLayerChannels) {
         let result = channels.1.try_recv();
         match result {
-            Ok((_, bytes)) => {
+            Ok((_, _, bytes)) => {
                 log_packet("outgoing tcp layer", &bytes);
             }
             Err(error) => {

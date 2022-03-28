@@ -25,6 +25,7 @@
 
 extern crate log;
 
+use super::channel_types::{Receiver, Sender, TryRecvError};
 use crate::smoltcp_ext::wire::log_packet;
 use crate::std_ext::fs::FileExt;
 use mio::unix::SourceFd;
@@ -32,14 +33,6 @@ use mio::{Events, Interest, Poll, Token};
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::io::FromRawFd;
-use std::sync::Arc;
-use std::sync::Mutex;
-
-pub type Sender<T> = crossbeam::channel::Sender<T>;
-pub type Receiver<T> = crossbeam::channel::Receiver<T>;
-pub type TryRecvError = crossbeam::channel::TryRecvError;
-pub type Channels<T> = (Sender<T>, Receiver<T>);
-pub type SyncChannels<T> = Arc<Mutex<Channels<T>>>;
 
 pub struct FileDescriptorChannel {
     log_tag: String,

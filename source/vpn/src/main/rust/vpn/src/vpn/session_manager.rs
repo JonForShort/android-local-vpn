@@ -25,7 +25,7 @@
 
 extern crate smoltcp;
 
-use super::channel_utils::{Channels, SyncChannels, TryRecvError};
+use super::channel_types::{IpLayerChannels, TcpLayerChannels, TryRecvError};
 use super::session::Session;
 use super::session_data::SessionData;
 use crate::smoltcp_ext::wire::log_packet;
@@ -35,26 +35,25 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 type Sessions<'a> = HashMap<Session, SessionData<'a>>;
 
 pub struct SessionManager {
-    ip_layer_channels: SyncChannels<Vec<u8>>,
-    tcp_layer_channels: SyncChannels<(Session, Vec<u8>)>,
+    ip_layer_channels: IpLayerChannels,
+    tcp_layer_channels: TcpLayerChannels,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl SessionManager {
     pub fn new(
-        ip_layer_channels: Channels<Vec<u8>>,
-        tcp_layer_channels: Channels<(Session, Vec<u8>)>,
+        ip_layer_channels: IpLayerChannels,
+        tcp_layer_channels: TcpLayerChannels,
     ) -> SessionManager {
         SessionManager {
-            ip_layer_channels: Arc::new(Mutex::new(ip_layer_channels)),
-            tcp_layer_channels: Arc::new(Mutex::new(tcp_layer_channels)),
+            ip_layer_channels: ip_layer_channels,
+            tcp_layer_channels: tcp_layer_channels,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
         }
@@ -68,8 +67,8 @@ impl SessionManager {
         let tcp_layer_channels = self.tcp_layer_channels.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
             let mut sessions: Sessions = HashMap::new();
-            let ip_layer_channels = ip_layer_channels.lock().unwrap().clone();
-            let tcp_layer_channels = tcp_layer_channels.lock().unwrap().clone();
+            let ip_layer_channels = ip_layer_channels;
+            let tcp_layer_channels = tcp_layer_channels;
             while is_thread_running.load(Ordering::SeqCst) {
                 SessionManager::process_outgoing_ip_layer_data(&mut sessions, &ip_layer_channels);
                 SessionManager::process_incoming_tcp_layer_data(&mut sessions, &tcp_layer_channels);
@@ -85,8 +84,8 @@ impl SessionManager {
 
     fn poll_sessions(
         sessions: &mut Sessions,
-        ip_layer_channels: &Channels<Vec<u8>>,
-        tcp_layer_channels: &Channels<(Session, Vec<u8>)>,
+        ip_layer_channels: &IpLayerChannels,
+        tcp_layer_channels: &TcpLayerChannels,
     ) {
         for (session, session_data) in sessions.iter_mut() {
             let interface = session_data.interface();
@@ -104,7 +103,7 @@ impl SessionManager {
                         log::trace!("tcp socket receiving buffer size [{:?}]", buffer.len());
                         if !buffer.is_empty() {
                             let tcp_layer_sender = tcp_layer_channels.0.clone();
-                            let tcp_data = (session.clone(), buffer.to_vec());
+                            let tcp_data = (session.dst_ip, session.dst_port, buffer.to_vec());
                             if let Err(error) = tcp_layer_sender.send(tcp_data) {
                                 log::error!("failed to send tcp buffer, error={:?}", error);
                             }
@@ -134,7 +133,7 @@ impl SessionManager {
         }
     }
 
-    fn process_outgoing_ip_layer_data(sessions: &mut Sessions, channels: &Channels<Vec<u8>>) {
+    fn process_outgoing_ip_layer_data(sessions: &mut Sessions, channels: &IpLayerChannels) {
         let result = channels.1.try_recv();
         match result {
             Ok(bytes) => {
@@ -187,19 +186,15 @@ impl SessionManager {
         }
     }
 
-    fn process_incoming_tcp_layer_data(
-        sessions: &mut Sessions,
-        channels: &Channels<(Session, Vec<u8>)>,
-    ) {
+    fn process_incoming_tcp_layer_data(sessions: &mut Sessions, channels: &TcpLayerChannels) {
         let receive_result = channels.1.try_recv();
         match receive_result {
-            Ok(incoming_data) => {
-                let received_bytes = incoming_data.1;
-                let session = incoming_data.0;
+            Ok((dst_ip, dst_port, bytes)) => {
                 log::trace!(
-                    "processing incoming tcp layer data, count={:?}, session={:?}",
-                    received_bytes.len(),
-                    session
+                    "processing incoming tcp layer data, count={:?}, dst_ip={:?}, dst_port={:?}",
+                    bytes.len(),
+                    dst_ip,
+                    dst_port
                 );
             }
             Err(error) => {

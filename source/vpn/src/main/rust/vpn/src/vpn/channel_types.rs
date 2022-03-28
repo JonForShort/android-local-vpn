@@ -23,13 +23,10 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-mod channel_types;
-mod channel_utils;
-mod ip_layer_processor;
-mod session;
-mod session_data;
-mod session_manager;
-mod tcp_layer_processor;
-mod vpn_device;
+pub type Sender<T> = crossbeam::channel::Sender<T>;
+pub type Receiver<T> = crossbeam::channel::Receiver<T>;
+pub type TryRecvError = crossbeam::channel::TryRecvError;
+pub type Channels<T> = (Sender<T>, Receiver<T>);
 
-pub mod vpn;
+pub type IpLayerChannels = Channels<Vec<u8>>;
+pub type TcpLayerChannels = Channels<([u8; 4], u16, Vec<u8>)>;

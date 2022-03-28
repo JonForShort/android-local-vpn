@@ -23,20 +23,21 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::channel_utils::{Channels, FileDescriptorChannel};
+use super::channel_types::IpLayerChannels;
+use super::channel_utils::FileDescriptorChannel;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 pub struct IpLayerProcessor {
     file_descriptor: i32,
-    channels: Channels<Vec<u8>>,
+    channels: IpLayerChannels,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl IpLayerProcessor {
-    pub fn new(file_descriptor: i32, channels: Channels<Vec<u8>>) -> IpLayerProcessor {
+    pub fn new(file_descriptor: i32, channels: IpLayerChannels) -> IpLayerProcessor {
         IpLayerProcessor {
             file_descriptor: file_descriptor,
             channels: channels,
