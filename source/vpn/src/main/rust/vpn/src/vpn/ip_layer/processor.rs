@@ -23,7 +23,7 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use crate::vpn::channel::types::IpLayerChannels;
+use super::channel::IpLayerChannel;
 use crate::vpn::channel::utils::FileDescriptorChannel;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -31,16 +31,16 @@ use std::thread::JoinHandle;
 
 pub struct IpLayerProcessor {
     file_descriptor: i32,
-    channels: IpLayerChannels,
+    channel: IpLayerChannel,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl IpLayerProcessor {
-    pub fn new(file_descriptor: i32, channels: IpLayerChannels) -> IpLayerProcessor {
+    pub fn new(file_descriptor: i32, channel: IpLayerChannel) -> IpLayerProcessor {
         IpLayerProcessor {
             file_descriptor: file_descriptor,
-            channels: channels,
+            channel: channel,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
         }
@@ -51,10 +51,10 @@ impl IpLayerProcessor {
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
         let file_descriptor = self.file_descriptor;
-        let channels = self.channels.clone();
+        let channel = self.channel.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
             let mut mio_helper =
-                FileDescriptorChannel::new("ip layer", file_descriptor, channels.0, channels.1);
+                FileDescriptorChannel::new("ip layer", file_descriptor, channel.0, channel.1);
             while is_thread_running.load(Ordering::SeqCst) {
                 mio_helper.poll(Some(std::time::Duration::from_secs(1)));
             }

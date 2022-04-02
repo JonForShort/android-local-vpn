@@ -23,7 +23,6 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-pub type Sender<T> = crossbeam::channel::Sender<T>;
-pub type Receiver<T> = crossbeam::channel::Receiver<T>;
-pub type TryRecvError = crossbeam::channel::TryRecvError;
-pub type Channel<T> = (Sender<T>, Receiver<T>);
+use crate::vpn::channel::types::Channel;
+
+pub type TcpLayerChannel = Channel<([u8; 4], u16, [u8; 4], u16, Vec<u8>)>;

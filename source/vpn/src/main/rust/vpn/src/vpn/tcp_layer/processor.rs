@@ -23,21 +23,22 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use crate::vpn::channel::types::{TcpLayerChannels, TryRecvError};
+use super::channel::TcpLayerChannel;
+use crate::vpn::channel::types::TryRecvError;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
 pub struct TcpLayerProcessor {
-    channels: TcpLayerChannels,
+    channel: TcpLayerChannel,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl TcpLayerProcessor {
-    pub fn new(channels: TcpLayerChannels) -> TcpLayerProcessor {
+    pub fn new(channel: TcpLayerChannel) -> TcpLayerProcessor {
         TcpLayerProcessor {
-            channels: channels,
+            channel: channel,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
         }
@@ -47,18 +48,18 @@ impl TcpLayerProcessor {
         log::trace!("starting tcp layer processor");
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
-        let channels = self.channels.clone();
+        let channel = self.channel.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
-            let channels = channels.clone();
+            let channel = channel.clone();
             while is_thread_running.load(Ordering::SeqCst) {
-                TcpLayerProcessor::process_incoming_tcp_layer_data(&channels);
+                TcpLayerProcessor::process_incoming_tcp_layer_data(&channel);
             }
             log::trace!("tcp layer processor is stopping");
         }));
     }
 
-    fn process_incoming_tcp_layer_data(channels: &TcpLayerChannels) {
-        let result = channels.1.try_recv();
+    fn process_incoming_tcp_layer_data(channel: &TcpLayerChannel) {
+        let result = channel.1.try_recv();
         match result {
             Ok((dst_ip, dst_port, src_ip, src_port, bytes)) => {
                 log::trace!(
