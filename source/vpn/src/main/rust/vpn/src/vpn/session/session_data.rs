@@ -24,59 +24,41 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::session::Session;
-use super::vpn_device::VpnDevice;
 use smoltcp::iface::{Context, Interface, InterfaceBuilder, Routes, SocketHandle};
+use smoltcp::phy::Device;
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::wire::IpEndpoint;
 use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
 use std::collections::btree_map::BTreeMap;
 
-pub struct SessionData<'a> {
-    interface: Interface<'a, VpnDevice>,
+pub struct SessionData<'a, DeviceT>
+where
+    DeviceT: for<'d> Device<'d>,
+{
+    interface: Interface<'a, DeviceT>,
     socket_handle: SocketHandle,
 }
 
-impl<'a> SessionData<'a> {
-    pub fn new(session: &Session) -> SessionData<'a> {
-        let mut interface = InterfaceBuilder::new(VpnDevice::new(), vec![])
+impl<'a, DeviceT> SessionData<'a, DeviceT>
+where
+    DeviceT: for<'d> Device<'d>,
+{
+    pub fn new(session: &Session, device: DeviceT) -> SessionData<'a, DeviceT> {
+        let mut interface = InterfaceBuilder::new(device, vec![])
             .any_ip(true)
             .ip_addrs([IpCidr::new(IpAddress::v4(10, 0, 0, 2), 8)])
-            .routes(SessionData::create_routes())
+            .routes(create_routes())
             .finalize();
-        let socket_handle = interface.add_socket(SessionData::create_tcp_socket());
+        let socket_handle = interface.add_socket(create_tcp_socket());
         let (socket, context) = interface.get_socket_and_context::<TcpSocket<'a>>(socket_handle);
-        SessionData::connect_session(session, socket, context);
+        connect_session(session, socket, context);
         SessionData {
             interface: interface,
             socket_handle: socket_handle,
         }
     }
 
-    fn create_routes() -> Routes<'a> {
-        let mut routes = Routes::new(BTreeMap::new());
-        let default_gateway_ipv4 = Ipv4Address::new(10, 0, 0, 2);
-        routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
-        return routes;
-    }
-
-    fn create_tcp_socket() -> TcpSocket<'a> {
-        let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 1024]);
-        let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 1024]);
-        return TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
-    }
-
-    fn connect_session(session: &Session, socket: &mut TcpSocket, context: &mut Context) {
-        let src_ip = Ipv4Address::from_bytes(&session.src_ip);
-        let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
-        let src_endpoint = IpEndpoint::new(IpAddress::from(src_ip), session.src_port);
-        let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
-        let connect_result = socket.connect(context, src_endpoint, dst_endpoint);
-        if let Err(_) = connect_result {
-            log::error!("failed to connect to session, session=[{}]", session);
-        }
-    }
-
-    pub fn interface(&mut self) -> &mut Interface<'a, VpnDevice> {
+    pub fn interface(&mut self) -> &mut Interface<'a, DeviceT> {
         return &mut self.interface;
     }
 
@@ -84,5 +66,29 @@ impl<'a> SessionData<'a> {
         let socket_handle = self.socket_handle;
         let interface = self.interface();
         return interface.get_socket::<TcpSocket<'a>>(socket_handle);
+    }
+}
+
+fn create_routes<'a>() -> Routes<'a> {
+    let mut routes = Routes::new(BTreeMap::new());
+    let default_gateway_ipv4 = Ipv4Address::new(10, 0, 0, 2);
+    routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
+    return routes;
+}
+
+fn create_tcp_socket<'a>() -> TcpSocket<'a> {
+    let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 1024]);
+    let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 1024]);
+    return TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
+}
+
+fn connect_session(session: &Session, socket: &mut TcpSocket, context: &mut Context) {
+    let src_ip = Ipv4Address::from_bytes(&session.src_ip);
+    let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
+    let src_endpoint = IpEndpoint::new(IpAddress::from(src_ip), session.src_port);
+    let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
+    let connect_result = socket.connect(context, src_endpoint, dst_endpoint);
+    if let Err(_) = connect_result {
+        log::error!("failed to connect to session, session=[{}]", session);
     }
 }

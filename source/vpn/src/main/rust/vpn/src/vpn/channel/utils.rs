@@ -25,7 +25,7 @@
 
 extern crate log;
 
-use super::channel_types::{Receiver, Sender, TryRecvError};
+use super::types::{Receiver, Sender, TryRecvError};
 use crate::smoltcp_ext::wire::log_packet;
 use crate::std_ext::fs::FileExt;
 use mio::unix::SourceFd;

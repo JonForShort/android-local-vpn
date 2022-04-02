@@ -25,10 +25,11 @@
 
 extern crate smoltcp;
 
-use super::channel_types::{IpLayerChannels, TcpLayerChannels, TryRecvError};
 use super::session::Session;
 use super::session_data::SessionData;
 use crate::smoltcp_ext::wire::log_packet;
+use crate::vpn::channel::types::{IpLayerChannels, TcpLayerChannels, TryRecvError};
+use crate::vpn::vpn_device::VpnDevice;
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 use std::collections::HashMap;
@@ -37,7 +38,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-type Sessions<'a> = HashMap<Session, SessionData<'a>>;
+type Sessions<'a> = HashMap<Session, SessionData<'a, VpnDevice>>;
 
 pub struct SessionManager {
     ip_layer_channels: IpLayerChannels,
@@ -149,7 +150,10 @@ impl SessionManager {
                         log::trace!("session already exists, session=[{:?}]", session);
                     } else {
                         log::trace!("starting new session, session=[{:?}]", session);
-                        sessions.insert(session.clone(), SessionData::new(&session));
+                        sessions.insert(
+                            session.clone(),
+                            SessionData::new(&session, VpnDevice::new()),
+                        );
                     };
                     if let Some(session_data) = sessions.get_mut(&session) {
                         let interface = session_data.interface();

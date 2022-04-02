@@ -23,10 +23,5 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-mod channel;
-mod ip_layer;
-mod session;
-mod tcp_layer;
-mod vpn_device;
-
-pub mod vpn;
+pub mod types;
+pub mod utils;

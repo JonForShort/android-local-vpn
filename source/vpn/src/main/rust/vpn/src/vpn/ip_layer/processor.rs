@@ -23,21 +23,23 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::channel_types::{TcpLayerChannels, TryRecvError};
-use crate::smoltcp_ext::wire::log_packet;
+use crate::vpn::channel::types::IpLayerChannels;
+use crate::vpn::channel::utils::FileDescriptorChannel;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-pub struct TcpLayerProcessor {
-    channels: TcpLayerChannels,
+pub struct IpLayerProcessor {
+    file_descriptor: i32,
+    channels: IpLayerChannels,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
-impl TcpLayerProcessor {
-    pub fn new(channels: TcpLayerChannels) -> TcpLayerProcessor {
-        TcpLayerProcessor {
+impl IpLayerProcessor {
+    pub fn new(file_descriptor: i32, channels: IpLayerChannels) -> IpLayerProcessor {
+        IpLayerProcessor {
+            file_descriptor: file_descriptor,
             channels: channels,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
@@ -45,54 +47,29 @@ impl TcpLayerProcessor {
     }
 
     pub fn start(&mut self) {
-        log::trace!("starting tcp layer processor");
+        log::trace!("starting ip layer processor");
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
+        let file_descriptor = self.file_descriptor;
         let channels = self.channels.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
-            let channels = channels.clone();
+            let mut mio_helper =
+                FileDescriptorChannel::new("ip layer", file_descriptor, channels.0, channels.1);
             while is_thread_running.load(Ordering::SeqCst) {
-                TcpLayerProcessor::process_incoming_tcp_layer_data(&channels);
+                mio_helper.poll(Some(std::time::Duration::from_secs(1)));
             }
-            log::trace!("tcp layer processor is stopping");
+            log::trace!("ip layer processor is stopping");
         }));
     }
 
-    fn process_incoming_tcp_layer_data(channels: &TcpLayerChannels) {
-        let result = channels.1.try_recv();
-        match result {
-            Ok((dst_ip, dst_port, src_ip, src_port, bytes)) => {
-                log::trace!(
-                    "processing incoming tcp layer data, count={:?}, dst_ip={:?}, dst_port={:?}, src_ip={:?}, src_port={:?}",
-                    bytes.len(),
-                    dst_ip,
-                    dst_port,
-                    src_ip,
-                    src_port
-                );
-            }
-            Err(error) => {
-                if error == TryRecvError::Empty {
-                    // wait for before trying again.
-                    std::thread::sleep(std::time::Duration::from_millis(100))
-                } else {
-                    log::error!(
-                        "failed to receive outgoing tcp layer data, error={:?}",
-                        error
-                    );
-                }
-            }
-        }
-    }
-
     pub fn stop(&mut self) {
-        log::trace!("stopping tcp layer processor");
+        log::trace!("stopping ip layer processor");
         self.is_thread_running.store(false, Ordering::SeqCst);
         self.thread_join_handle
             .take()
-            .expect("stop tcp layer processor thread")
+            .expect("stop ip layer processor thread")
             .join()
-            .expect("join tcp layer processor thread");
-        log::trace!("tcp layer processor is stopped");
+            .expect("join ip layer processor thread");
+        log::trace!("ip layer processor is stopped");
     }
 }
