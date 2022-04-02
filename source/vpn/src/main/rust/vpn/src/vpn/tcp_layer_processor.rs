@@ -61,13 +61,20 @@ impl TcpLayerProcessor {
     fn process_incoming_tcp_layer_data(channels: &TcpLayerChannels) {
         let result = channels.1.try_recv();
         match result {
-            Ok((_, _, bytes)) => {
-                log_packet("outgoing tcp layer", &bytes);
+            Ok((dst_ip, dst_port, src_ip, src_port, bytes)) => {
+                log::trace!(
+                    "processing incoming tcp layer data, count={:?}, dst_ip={:?}, dst_port={:?}, src_ip={:?}, src_port={:?}",
+                    bytes.len(),
+                    dst_ip,
+                    dst_port,
+                    src_ip,
+                    src_port
+                );
             }
             Err(error) => {
                 if error == TryRecvError::Empty {
                     // wait for before trying again.
-                    std::thread::sleep(std::time::Duration::from_millis(500))
+                    std::thread::sleep(std::time::Duration::from_millis(100))
                 } else {
                     log::error!(
                         "failed to receive outgoing tcp layer data, error={:?}",

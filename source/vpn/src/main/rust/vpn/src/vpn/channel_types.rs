@@ -29,4 +29,4 @@ pub type TryRecvError = crossbeam::channel::TryRecvError;
 pub type Channels<T> = (Sender<T>, Receiver<T>);
 
 pub type IpLayerChannels = Channels<Vec<u8>>;
-pub type TcpLayerChannels = Channels<([u8; 4], u16, Vec<u8>)>;
+pub type TcpLayerChannels = Channels<([u8; 4], u16, [u8; 4], u16, Vec<u8>)>;

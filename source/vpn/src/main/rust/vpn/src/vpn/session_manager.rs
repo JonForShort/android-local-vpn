@@ -102,9 +102,15 @@ impl SessionManager {
                     let result = tcp_socket.recv(|buffer| {
                         log::trace!("tcp socket receiving buffer size [{:?}]", buffer.len());
                         if !buffer.is_empty() {
-                            let tcp_layer_sender = tcp_layer_channels.0.clone();
-                            let tcp_data = (session.dst_ip, session.dst_port, buffer.to_vec());
-                            if let Err(error) = tcp_layer_sender.send(tcp_data) {
+                            log::trace!("tcp buffer is not empty; sending buffer to tcp layer");
+                            let tcp_data = (
+                                session.dst_ip,
+                                session.dst_port,
+                                session.src_ip,
+                                session.src_port,
+                                buffer.to_vec(),
+                            );
+                            if let Err(error) = tcp_layer_channels.0.send(tcp_data) {
                                 log::error!("failed to send tcp buffer, error={:?}", error);
                             }
                         }
@@ -189,12 +195,14 @@ impl SessionManager {
     fn process_incoming_tcp_layer_data(sessions: &mut Sessions, channels: &TcpLayerChannels) {
         let receive_result = channels.1.try_recv();
         match receive_result {
-            Ok((dst_ip, dst_port, bytes)) => {
+            Ok((dst_ip, dst_port, src_ip, src_port, bytes)) => {
                 log::trace!(
-                    "processing incoming tcp layer data, count={:?}, dst_ip={:?}, dst_port={:?}",
+                    "processing incoming tcp layer data, count={:?}, dst_ip={:?}, dst_port={:?}, src_ip={:?}, src_port={:?}",
                     bytes.len(),
                     dst_ip,
-                    dst_port
+                    dst_port,
+                    src_ip,
+                    src_port
                 );
             }
             Err(error) => {
