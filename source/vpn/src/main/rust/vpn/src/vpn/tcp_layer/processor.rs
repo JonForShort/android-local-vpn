@@ -24,10 +24,15 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::channel::TcpLayerChannel;
+use super::session::Session as TcpSession;
+use super::session_data::SessionData as TcpSessionData;
 use crate::vpn::channel::types::TryRecvError;
+use std::collections::hash_map::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
+
+type TcpSessions<'a> = HashMap<TcpSession, TcpSessionData>;
 
 pub struct TcpLayerProcessor {
     channel: TcpLayerChannel,
@@ -51,14 +56,16 @@ impl TcpLayerProcessor {
         let channel = self.channel.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
             let channel = channel.clone();
+            let mut sessions = TcpSessions::new();
             while is_thread_running.load(Ordering::SeqCst) {
-                TcpLayerProcessor::process_incoming_tcp_layer_data(&channel);
+                TcpLayerProcessor::process_incoming_tcp_layer_data(&mut sessions, &channel);
+                TcpLayerProcessor::poll_sessions(&mut sessions);
             }
             log::trace!("tcp layer processor is stopping");
         }));
     }
 
-    fn process_incoming_tcp_layer_data(channel: &TcpLayerChannel) {
+    fn process_incoming_tcp_layer_data(sessions: &mut TcpSessions, channel: &TcpLayerChannel) {
         let result = channel.1.try_recv();
         match result {
             Ok((dst_ip, dst_port, src_ip, src_port, bytes)) => {
@@ -70,6 +77,20 @@ impl TcpLayerProcessor {
                     src_ip,
                     src_port
                 );
+                let session = TcpSession {
+                    dst_ip: dst_ip,
+                    dst_port: dst_port,
+                    src_ip: src_ip,
+                    src_port: src_port,
+                };
+                if sessions.contains_key(&session) {
+                    log::trace!("tcp session already exists, session=[{:?}]", session);
+                } else {
+                    log::trace!("starting new tcp session, session=[{:?}]", session);
+                    let mut session_data = TcpSessionData::new();
+                    session_data.connect_stream(dst_ip, dst_port);
+                    sessions.insert(session, session_data);
+                };
             }
             Err(error) => {
                 if error == TryRecvError::Empty {
@@ -81,6 +102,14 @@ impl TcpLayerProcessor {
                         error
                     );
                 }
+            }
+        }
+    }
+
+    fn poll_sessions(sessions: &mut TcpSessions) {
+        for (_, session) in sessions.iter_mut() {
+            if session.is_data_available() {
+                log::trace!("data is available for ")
             }
         }
     }

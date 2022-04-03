@@ -23,7 +23,30 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-mod session;
-mod session_data;
+use std::fmt;
+use std::hash::Hash;
 
-pub mod session_manager;
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
+pub struct Session {
+    pub src_ip: [u8; 4],
+    pub src_port: u16,
+    pub dst_ip: [u8; 4],
+    pub dst_port: u16,
+}
+
+impl fmt::Display for Session {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "{}:{}->{}:{}",
+            ip_octet_to_string(&self.src_ip),
+            self.src_port,
+            ip_octet_to_string(&self.dst_ip),
+            self.dst_port
+        )
+    }
+}
+
+fn ip_octet_to_string(ip: &[u8; 4]) -> String {
+    ip.iter().map(|&i| i.to_string() + ".").collect()
+}

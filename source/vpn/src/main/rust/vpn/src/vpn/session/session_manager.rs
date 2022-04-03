@@ -69,7 +69,7 @@ impl SessionManager {
         let ip_layer_channel = self.ip_layer_channel.clone();
         let tcp_layer_channel = self.tcp_layer_channel.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
-            let mut sessions: Sessions = HashMap::new();
+            let mut sessions = Sessions::new();
             let ip_layer_channel = ip_layer_channel;
             let tcp_layer_channel = tcp_layer_channel;
             while is_thread_running.load(Ordering::SeqCst) {
