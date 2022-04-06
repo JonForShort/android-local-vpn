@@ -25,7 +25,7 @@
 
 mod channel;
 mod ip_layer;
-mod session;
+mod session_manager;
 mod tcp_layer;
 mod vpn_device;
 

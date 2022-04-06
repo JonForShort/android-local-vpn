@@ -26,7 +26,7 @@
 extern crate log;
 
 use super::ip_layer::processor::IpLayerProcessor;
-use super::session::session_manager::SessionManager;
+use super::session_manager::session_manager::SessionManager;
 use super::tcp_layer::processor::TcpLayerProcessor;
 use crossbeam::channel::unbounded;
 

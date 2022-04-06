@@ -23,7 +23,6 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use mio::net::TcpStream;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};

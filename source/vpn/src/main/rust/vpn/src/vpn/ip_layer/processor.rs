@@ -53,10 +53,10 @@ impl IpLayerProcessor {
         let file_descriptor = self.file_descriptor;
         let channel = self.channel.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
-            let mut mio_helper =
+            let mut file_descriptor_channel =
                 FileDescriptorChannel::new("ip layer", file_descriptor, channel.0, channel.1);
             while is_thread_running.load(Ordering::SeqCst) {
-                mio_helper.poll(Some(std::time::Duration::from_secs(1)));
+                file_descriptor_channel.poll(Some(std::time::Duration::from_millis(100)));
             }
             log::trace!("ip layer processor is stopping");
         }));
