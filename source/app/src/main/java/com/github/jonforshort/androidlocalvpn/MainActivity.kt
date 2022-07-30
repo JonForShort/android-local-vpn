@@ -26,11 +26,11 @@
 //
 package com.github.jonforshort.androidlocalvpn
 
-import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Surface
@@ -53,6 +53,14 @@ class MainActivity : ComponentActivity() {
 
     private val vpnState = MutableLiveData(false)
 
+    private val vpnServicePreparedLauncher =
+        registerForActivityResult(StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                startVpn(this)
+                vpnState.postValue(true)
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -71,32 +79,19 @@ class MainActivity : ComponentActivity() {
 
     private fun onVpnStateChanged(vpnEnabled: Boolean) {
         if (vpnEnabled) {
-            prepareVpn()
+            val vpnIntent = VpnService.prepare(this)
+            if (vpnIntent == null) {
+                startVpn(this)
+                vpnState.postValue(true)
+            } else {
+                vpnServicePreparedLauncher.launch(vpnIntent)
+            }
         } else {
             stopVpn(this)
             vpnState.postValue(false)
         }
     }
-
-    private fun prepareVpn() {
-        val vpnIntent = VpnService.prepare(this)
-        if (vpnIntent != null) {
-            startActivityForResult(vpnIntent, LOCAL_VPN_REQUEST_CODE)
-        } else {
-            onActivityResult(LOCAL_VPN_REQUEST_CODE, RESULT_OK, null)
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == LOCAL_VPN_REQUEST_CODE && resultCode == RESULT_OK) {
-            startVpn(this)
-            vpnState.postValue(true)
-        }
-    }
 }
-
-private const val LOCAL_VPN_REQUEST_CODE = 1000
 
 @Composable
 private fun VpnState(
