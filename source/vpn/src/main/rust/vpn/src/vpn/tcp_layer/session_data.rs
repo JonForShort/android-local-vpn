@@ -26,6 +26,7 @@
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+use std::io::Result;
 use std::net::SocketAddr;
 use std::os::unix::io::AsRawFd;
 
@@ -51,7 +52,11 @@ impl SessionData {
         socket.set_nonblocking(true).unwrap();
 
         let raw_fd = socket.as_raw_fd();
-        socket_protector!().protect_socket(raw_fd);
+        let is_socket_protected = socket_protector!().protect_socket(raw_fd);
+        log::trace!(
+            "attempted to protect socket, is_socket_protected={:?}",
+            is_socket_protected
+        );
 
         self.poll
             .registry()
@@ -72,5 +77,10 @@ impl SessionData {
         } else {
             return false;
         };
+    }
+
+    pub fn send(&mut self, bytes: &Vec<u8>) -> Result<usize> {
+        let bytes_as_array = &bytes[..];
+        return self.socket.as_ref().unwrap().send(bytes_as_array);
     }
 }

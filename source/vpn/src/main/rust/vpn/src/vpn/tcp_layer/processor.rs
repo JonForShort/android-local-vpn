@@ -89,8 +89,27 @@ impl TcpLayerProcessor {
                     log::trace!("starting new tcp session, session=[{:?}]", session);
                     let mut session_data = TcpSessionData::new();
                     session_data.connect_stream(dst_ip, dst_port);
-                    sessions.insert(session, session_data);
+                    sessions.insert(session.clone(), session_data);
                 };
+                if let Some(session_data) = sessions.get_mut(&session) {
+                    let result = session_data.send(&bytes);
+                    match result {
+                        Ok(sent_bytes) => {
+                            log::trace!(
+                                "sent bytes, sent_bytes={:?}, session=[{:?}]",
+                                sent_bytes,
+                                session
+                            )
+                        }
+                        Err(error) => {
+                            log::error!(
+                                "failed to send bytes, error={:?}, session=[{:?}]",
+                                error,
+                                session
+                            )
+                        }
+                    }
+                }
             }
             Err(error) => {
                 if error == TryRecvError::Empty {

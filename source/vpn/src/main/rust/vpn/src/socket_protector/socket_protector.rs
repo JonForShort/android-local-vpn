@@ -99,8 +99,8 @@ impl SocketProtector {
     ) {
         let (socket, reply_sender) = receiver.recv().unwrap();
         log::trace!("handling protect socket request, socket={:?}", socket);
-        if socket >= 0 {
-            log::trace!("found negative socket");
+        if socket <= 0 {
+            log::trace!("found invalid socket");
             return;
         }
         let is_successful = JavaType::Primitive(Primitive::Boolean);
@@ -158,20 +158,26 @@ impl SocketProtector {
             .expect("join socket protector thread");
     }
 
-    pub fn protect_socket(&self, socket: i32) {
+    pub fn protect_socket(&self, socket: i32) -> bool {
         let reply_channel: (Sender<bool>, Receiver<bool>) = unbounded();
         match self.channel.0.send((socket, reply_channel.0)) {
             Ok(_) => {
                 let result = reply_channel.1.recv().unwrap();
                 if result {
-                    log::error!("successfully sent request to protect socket");
+                    log::trace!("successfully protected socket, socket={:?}", socket);
                 } else {
-                    log::error!("failed to send request to protect socket");
+                    log::error!("failed to protect socket, socket={:?}", socket);
                 }
+                return result;
             }
             Err(error_code) => {
-                log::error!("failed to protect socket, error={:?}", error_code);
+                log::error!(
+                    "failed to protect socket, socket={:?} error={:?}",
+                    socket,
+                    error_code
+                );
             }
         }
+        return false;
     }
 }
