@@ -28,19 +28,24 @@ package com.github.jonforshort.androidlocalvpn
 
 import android.net.VpnService
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Surface
-import androidx.compose.material.Switch
-import androidx.compose.material.Text
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.MutableLiveData
@@ -48,6 +53,18 @@ import com.github.jonforshort.androidlocalvpn.ui.theme.AndroidLocalVpnTheme
 import com.github.jonforshort.androidlocalvpn.vpn.isVpnRunning
 import com.github.jonforshort.androidlocalvpn.vpn.startVpn
 import com.github.jonforshort.androidlocalvpn.vpn.stopVpn
+import com.google.accompanist.pager.ExperimentalPagerApi
+import com.google.accompanist.pager.HorizontalPager
+import com.google.accompanist.pager.pagerTabIndicatorOffset
+import com.google.accompanist.pager.rememberPagerState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.jsoup.Connection
+import org.jsoup.Jsoup
+import timber.log.Timber.d
+import timber.log.Timber.e
+import java.io.IOException
 
 class MainActivity : ComponentActivity() {
 
@@ -66,9 +83,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             AndroidLocalVpnTheme {
                 Surface(color = MaterialTheme.colors.background) {
-                    VpnState(
-                        vpnState.observeAsState(),
-                        ::onVpnStateChanged
+                    MainView(
+                        tabData = listOf(
+                            "TEST" to Icons.Filled.Send,
+                            "SETTINGS" to Icons.Filled.Settings,
+                        ),
+                        onTabDisplayed = { index ->
+                            when (index) {
+                                0 -> {
+                                    TestTab()
+                                }
+                                1 -> {
+                                    SettingsTab(
+                                        vpnState.observeAsState(),
+                                        ::onVpnStateChanged
+                                    )
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -94,7 +126,40 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun VpnState(
+private fun TestTab() {
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    Column {
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                coroutineScope.launch(Dispatchers.IO) {
+                    val conn = Jsoup.connect("https://google.com/").method(Connection.Method.GET)
+                    try {
+                        val resp = conn.execute()
+                        val html = resp.body()
+                        d(html)
+
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Success", Toast.LENGTH_LONG).show()
+                        }
+                    } catch (e: IOException) {
+                        e(e)
+
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "Error", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+        ) {
+            Text("Test #1")
+        }
+    }
+}
+
+@Composable
+private fun SettingsTab(
     isVpnEnabled: State<Boolean?> = mutableStateOf(false),
     onVpnEnabledChanged: (Boolean) -> Unit = {}
 ) {
@@ -116,10 +181,56 @@ private fun VpnState(
     }
 }
 
+@OptIn(ExperimentalPagerApi::class)
+@Composable
+private fun MainView(
+    tabData: List<Pair<String, ImageVector>> = emptyList(),
+    onTabDisplayed: @Composable (index: Int) -> Unit = {}
+) {
+    val pagerState = rememberPagerState()
+    val tabIndex = pagerState.currentPage
+    val coroutineScope = rememberCoroutineScope()
+    Column {
+        TabRow(
+            selectedTabIndex = tabIndex,
+            indicator = { tabPositions ->
+                TabRowDefaults.Indicator(
+                    Modifier.pagerTabIndicatorOffset(pagerState, tabPositions)
+                )
+            }
+        ) {
+            tabData.forEachIndexed { index, pair ->
+                Tab(selected = tabIndex == index, onClick = {
+                    coroutineScope.launch {
+                        pagerState.animateScrollToPage(index)
+                    }
+                }, text = {
+                    Text(text = pair.first)
+                }, icon = {
+                    Icon(imageVector = pair.second, contentDescription = null)
+                })
+            }
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.weight(1f),
+            count = tabData.size
+        ) { index ->
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Top,
+                horizontalAlignment = Alignment.Start
+            ) {
+                onTabDisplayed(index)
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun DefaultPreview() {
     AndroidLocalVpnTheme {
-        VpnState()
+        MainView()
     }
 }

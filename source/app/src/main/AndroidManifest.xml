@@ -3,6 +3,7 @@
     package="com.github.jonforshort.androidlocalvpn">
 
     <application
+        android:name=".AndroidLocalVpnApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -12,7 +13,6 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:theme="@style/Theme.AndroidLocalVpn.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
