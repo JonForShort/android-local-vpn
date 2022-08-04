@@ -91,8 +91,12 @@ impl TcpLayerProcessor {
                     session_data.connect_stream(dst_ip, dst_port);
                     sessions.insert(session.clone(), session_data);
                 };
+                log::trace!(
+                    "session is ready for processing incoming data, session=[{:?}]",
+                    session
+                );
                 if let Some(session_data) = sessions.get_mut(&session) {
-                    let result = session_data.send(&bytes);
+                    let result = session_data.send_data(&bytes);
                     match result {
                         Ok(sent_bytes) => {
                             log::trace!(
@@ -110,6 +114,10 @@ impl TcpLayerProcessor {
                         }
                     }
                 }
+                log::trace!(
+                    "finished processing incoming data for session, session=[{:?}]",
+                    session
+                );
             }
             Err(error) => {
                 if error == TryRecvError::Empty {
@@ -126,9 +134,16 @@ impl TcpLayerProcessor {
     }
 
     fn poll_sessions(sessions: &mut TcpSessions) {
-        for (_, session) in sessions.iter_mut() {
-            if session.is_data_available() {
-                log::trace!("data is available for ")
+        for (session, session_data) in sessions.iter_mut() {
+            if session_data.is_data_available() {
+                log::trace!("data is available, session=[{:?}]", session);
+                let (_, data) = session_data.read_data();
+
+                log::trace!(
+                    "read data for session, session=[{:?}], data={:?}",
+                    session,
+                    data
+                );
             }
         }
     }

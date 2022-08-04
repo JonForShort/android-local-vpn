@@ -49,12 +49,14 @@ impl SessionData {
 
     pub fn connect_stream(&mut self, ip: [u8; 4], port: u16) {
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
-        socket.set_nonblocking(true).unwrap();
+
+        // TODO: socket is currently blocking.
+        // socket.set_nonblocking(true).unwrap();
 
         let raw_fd = socket.as_raw_fd();
         let is_socket_protected = socket_protector!().protect_socket(raw_fd);
         log::trace!(
-            "attempted to protect socket, is_socket_protected={:?}",
+            "finished protecting socket, is_socket_protected={:?}",
             is_socket_protected
         );
 
@@ -64,7 +66,34 @@ impl SessionData {
             .unwrap();
 
         let remote_address = SockAddr::from(SocketAddr::from((ip, port)));
-        socket.connect(&remote_address).unwrap();
+
+        log::trace!(
+            "attempting to connect to remote host, ip={:?}, port={:?}, remote_address=[{:?}]",
+            ip,
+            port,
+            remote_address
+        );
+
+        let result = socket.connect(&remote_address);
+        match result {
+            Ok(_) => {
+                log::trace!(
+                    "successfully connected to remote host, ip={:?}, port={:?}, remote_address=[{:?}]",
+                    ip,
+                    port,
+                    remote_address
+                );
+            }
+            Err(error_code) => {
+                log::error!(
+                    "failed to connect to remote host, error_code={:?}, ip={:?}, port={:?}, remote_address=[{:?}]",
+                    error_code,
+                    ip,
+                    port,
+                    remote_address
+                );
+            }
+        }
 
         self.socket = Some(socket);
     }
@@ -79,8 +108,34 @@ impl SessionData {
         };
     }
 
-    pub fn send(&mut self, bytes: &Vec<u8>) -> Result<usize> {
+    pub fn send_data(&mut self, bytes: &Vec<u8>) -> Result<usize> {
         let bytes_as_array = &bytes[..];
-        return self.socket.as_ref().unwrap().send(bytes_as_array);
+        let result = self.socket.as_ref().unwrap().send(bytes_as_array);
+        if let Ok(size) = result {
+            log::trace!(
+                "sent data to socket, size={:?}, data={:?}",
+                size,
+                bytes_as_array
+            );
+        }
+        return result;
+    }
+
+    pub fn read_data(&mut self) -> (Result<usize>, Vec<u8>) {
+        let mut buffer = Vec::with_capacity(1024);
+        let result = self.socket.as_ref().unwrap().recv(&mut buffer);
+        if let Ok(size) = result {
+            log::trace!(
+                "received data from socket, size={:?}, buffer={:?}",
+                size,
+                buffer
+            );
+            unsafe {
+                buffer.set_len(size);
+                return (result, std::mem::transmute(buffer));
+            }
+        } else {
+            return (result, Vec::with_capacity(0));
+        }
     }
 }
