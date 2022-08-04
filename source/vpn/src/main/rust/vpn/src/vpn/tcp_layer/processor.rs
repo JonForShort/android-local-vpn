@@ -59,7 +59,7 @@ impl TcpLayerProcessor {
             let mut sessions = TcpSessions::new();
             while is_thread_running.load(Ordering::SeqCst) {
                 TcpLayerProcessor::process_incoming_tcp_layer_data(&mut sessions, &channel);
-                TcpLayerProcessor::poll_sessions(&mut sessions);
+                TcpLayerProcessor::poll_sessions(&mut sessions, &channel);
             }
             log::trace!("tcp layer processor is stopping");
         }));
@@ -133,17 +133,32 @@ impl TcpLayerProcessor {
         }
     }
 
-    fn poll_sessions(sessions: &mut TcpSessions) {
+    fn poll_sessions(sessions: &mut TcpSessions, channel: &TcpLayerChannel) {
         for (session, session_data) in sessions.iter_mut() {
             if session_data.is_data_available() {
                 log::trace!("data is available, session=[{:?}]", session);
-                let (_, data) = session_data.read_data();
-
+                let data = session_data.read_data();
                 log::trace!(
-                    "read data for session, session=[{:?}], data={:?}",
+                    "read data for session, session=[{:?}], size={:?}, data={:?}",
                     session,
+                    data.len(),
                     data
                 );
+                let result = channel.0.send((
+                    session.dst_ip,
+                    session.dst_port,
+                    session.src_ip,
+                    session.src_port,
+                    data,
+                ));
+                match result {
+                    Ok(_) => {
+                        log::trace!("successfully sent data to session manager")
+                    }
+                    Err(error) => {
+                        log::trace!("failed to send data to session manager, error={:?}", error)
+                    }
+                }
             }
         }
     }

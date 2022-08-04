@@ -26,6 +26,7 @@
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+use std::io::Read;
 use std::io::Result;
 use std::net::SocketAddr;
 use std::os::unix::io::AsRawFd;
@@ -121,21 +122,23 @@ impl SessionData {
         return result;
     }
 
-    pub fn read_data(&mut self) -> (Result<usize>, Vec<u8>) {
-        let mut buffer = Vec::with_capacity(1024);
-        let result = self.socket.as_ref().unwrap().recv(&mut buffer);
-        if let Ok(size) = result {
-            log::trace!(
-                "received data from socket, size={:?}, buffer={:?}",
-                size,
-                buffer
-            );
-            unsafe {
-                buffer.set_len(size);
-                return (result, std::mem::transmute(buffer));
+    pub fn read_data(&mut self) -> Vec<u8> {
+        let buffer_size = 1024;
+        let mut request_buffer: Vec<u8> = vec![];
+        loop {
+            let mut buffer = vec![0; buffer_size];
+            match self.socket.as_ref().unwrap().read(&mut buffer) {
+                Ok(read_size) => {
+                    if read_size <= 0 {
+                        return request_buffer;
+                    } else {
+                        request_buffer.append(&mut buffer);
+                    }
+                }
+                Err(_) => {
+                    return request_buffer;
+                }
             }
-        } else {
-            return (result, Vec::with_capacity(0));
         }
     }
 }
