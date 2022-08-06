@@ -100,14 +100,14 @@ impl TcpLayerProcessor {
                     match result {
                         Ok(sent_bytes) => {
                             log::trace!(
-                                "sent bytes, sent_bytes={:?}, session=[{:?}]",
+                                "sent data, count={:?}, session=[{:?}]",
                                 sent_bytes,
                                 session
                             )
                         }
                         Err(error) => {
                             log::error!(
-                                "failed to send bytes, error={:?}, session=[{:?}]",
+                                "failed to send data, error={:?}, session=[{:?}]",
                                 error,
                                 session
                             )
@@ -138,12 +138,7 @@ impl TcpLayerProcessor {
             if session_data.is_data_available() {
                 log::trace!("data is available, session=[{:?}]", session);
                 let data = session_data.read_data();
-                log::trace!(
-                    "read data for session, session=[{:?}], size={:?}, data={:?}",
-                    session,
-                    data.len(),
-                    data
-                );
+                log::trace!("read data, count={:?}, session=[{:?}]", data.len(), session);
                 let result = channel.0.send((
                     session.dst_ip,
                     session.dst_port,

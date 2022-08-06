@@ -134,11 +134,14 @@ private fun TestTab() {
             modifier = Modifier.fillMaxWidth(),
             onClick = {
                 coroutineScope.launch(Dispatchers.IO) {
-                    val conn = Jsoup.connect("https://google.com/").method(Connection.Method.GET)
+                    val conn = Jsoup.connect("http://google.com/").method(Connection.Method.GET)
                     try {
                         val resp = conn.execute()
                         val html = resp.body()
+
+                        d("dumping html, count=${html.length}")
                         d(html)
+                        d("done dumping html")
 
                         withContext(Dispatchers.Main) {
                             Toast.makeText(context, "Success", Toast.LENGTH_LONG).show()

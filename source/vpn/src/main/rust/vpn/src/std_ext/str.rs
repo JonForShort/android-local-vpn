@@ -23,5 +23,8 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-pub mod fs;
-pub mod str;
+pub fn to_str(bytes: &Vec<u8>) -> String {
+    let mut cloned_bytes = bytes.clone();
+    cloned_bytes.truncate(32);
+    return String::from_utf8_lossy(&cloned_bytes).into_owned();
+}
