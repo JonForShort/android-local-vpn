@@ -134,7 +134,10 @@ private fun TestTab() {
             modifier = Modifier.fillMaxWidth(),
             onClick = {
                 coroutineScope.launch(Dispatchers.IO) {
-                    val conn = Jsoup.connect("http://google.com/").method(Connection.Method.GET)
+                    val conn = Jsoup
+                        .connect("http://google.com/")
+                        .followRedirects(false)
+                        .method(Connection.Method.GET)
                     try {
                         val resp = conn.execute()
                         val html = resp.body()
