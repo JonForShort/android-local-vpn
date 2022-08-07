@@ -33,24 +33,14 @@ pub fn log_packet(message: &str, bytes: &Vec<u8>) {
         let tcp_bytes = ip_packet.payload();
         let tcp_packet = TcpPacket::new_checked(tcp_bytes).expect("invalid tcp packet");
         log::trace!(
-            "tcp packet [{:?}], ip_length=[{:?}], tcp_length=[{:?}], src_ip=[{:?}], src_port=[{:?}], dst_ip=[{:?}], dst_port=[{:?}], protocol=[{:?}]",
+            "[{:?}] len={:?} tcp=[{}] tcp_len={:?} ip=[{}]",
             message,
             bytes.len(),
+            tcp_packet,
             tcp_bytes.len(),
-            ip_packet.src_addr(),
-            tcp_packet.src_port(),
-            ip_packet.dst_addr(),
-            tcp_packet.dst_port(),
-            ip_packet.protocol()
-        )
-    } else {
-        log::trace!(
-            "ip packet [{:?}], ip_length=[{:?}], src_ip=[{:?}], dst_ip=[{:?}], protocol=[{:?}]",
-            message,
-            bytes.len(),
-            ip_packet.src_addr(),
-            ip_packet.dst_addr(),
-            ip_packet.protocol()
+            ip_packet
         );
+    } else {
+        log::trace!("[{:?}] len={:?} ip=[{}]", message, bytes.len(), ip_packet);
     }
 }
