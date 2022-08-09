@@ -51,9 +51,6 @@ impl SessionData {
     pub fn connect_stream(&mut self, ip: [u8; 4], port: u16) {
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
-        // TODO: socket is currently blocking.
-        // socket.set_nonblocking(true).unwrap();
-
         let raw_fd = socket.as_raw_fd();
         let is_socket_protected = socket_protector!().protect_socket(raw_fd);
         log::trace!(
@@ -84,6 +81,7 @@ impl SessionData {
                     port,
                     remote_address
                 );
+                socket.set_nonblocking(true).unwrap();
             }
             Err(error_code) => {
                 log::error!(
@@ -125,20 +123,36 @@ impl SessionData {
     pub fn read_data(&mut self) -> Vec<u8> {
         let buffer_size = 1024;
         let mut request_buffer: Vec<u8> = vec![];
-        loop {
-            let mut buffer = vec![0; buffer_size];
-            match self.socket.as_ref().unwrap().read(&mut buffer) {
-                Ok(read_size) => {
-                    if read_size <= 0 {
-                        return request_buffer;
-                    } else {
-                        request_buffer.append(&mut buffer);
+        if let Some(socket) = &mut self.socket {
+            loop {
+                log::trace!("attempting to read data from tcp socket");
+                let mut buffer = vec![0; buffer_size];
+                match socket.read(&mut buffer) {
+                    Ok(read_size) => {
+                        log::trace!("read data from tcp socket, size={:?}", read_size);
+                        if read_size <= 0 {
+                            log::trace!("no more data read from tcp socket");
+                            break;
+                        } else {
+                            unsafe {
+                                buffer.set_len(read_size);
+                            }
+                            request_buffer.append(&mut buffer);
+                        }
+                    }
+                    Err(error) => {
+                        log::error!("read data from tcp socket failed, error={:?}", error);
+                        break;
                     }
                 }
-                Err(_) => {
-                    return request_buffer;
-                }
             }
+        } else {
+            log::error!("read data from tcp socket failed; socket does not exist");
         }
+        log::trace!(
+            "finished reading data from tcp socket, count={:?}",
+            request_buffer.len()
+        );
+        return request_buffer;
     }
 }
