@@ -129,37 +129,57 @@ class MainActivity : ComponentActivity() {
 private fun TestTab() {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    fun performJsoupRequest(createJsoupConnection: () -> Connection) {
+        coroutineScope.launch(Dispatchers.IO) {
+            val conn = createJsoupConnection()
+            try {
+                val resp = conn.execute()
+                val html = resp.body()
+
+                d("dumping html, count=${html.length}")
+                d(html)
+                d("done dumping html")
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Success", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: IOException) {
+                e(e)
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Error", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     Column {
         Button(
             modifier = Modifier.fillMaxWidth(),
             onClick = {
-                coroutineScope.launch(Dispatchers.IO) {
-                    val conn = Jsoup
+                performJsoupRequest {
+                    Jsoup
                         .connect("http://google.com/")
                         .followRedirects(false)
                         .method(Connection.Method.GET)
-                    try {
-                        val resp = conn.execute()
-                        val html = resp.body()
-
-                        d("dumping html, count=${html.length}")
-                        d(html)
-                        d("done dumping html")
-
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "Success", Toast.LENGTH_LONG).show()
-                        }
-                    } catch (e: IOException) {
-                        e(e)
-
-                        withContext(Dispatchers.Main) {
-                            Toast.makeText(context, "Error", Toast.LENGTH_LONG).show()
-                        }
-                    }
                 }
             }
         ) {
-            Text("Test #1")
+            Text("Google HTTP No Redirection")
+        }
+
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                performJsoupRequest {
+                    Jsoup
+                        .connect("https://google.com/")
+                        .method(Connection.Method.GET)
+                }
+            }
+        ) {
+            Text("Google HTTPS")
         }
     }
 }
