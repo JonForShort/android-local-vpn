@@ -28,19 +28,26 @@ use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 extern crate log;
 
 pub fn log_packet(message: &str, bytes: &Vec<u8>) {
-    let ip_packet = Ipv4Packet::new_checked(&bytes).expect("truncated ip packet");
-    if ip_packet.protocol() == IpProtocol::Tcp {
-        let tcp_bytes = ip_packet.payload();
-        let tcp_packet = TcpPacket::new_checked(tcp_bytes).expect("invalid tcp packet");
-        log::trace!(
-            "[{:?}] len={:?} tcp=[{}] tcp_len={:?} ip=[{}]",
-            message,
-            bytes.len(),
-            tcp_packet,
-            tcp_bytes.len(),
-            ip_packet
-        );
-    } else {
-        log::trace!("[{:?}] len={:?} ip=[{}]", message, bytes.len(), ip_packet);
+    let result = Ipv4Packet::new_checked(&bytes);
+    match result {
+        Ok(ip_packet) => {
+            if ip_packet.protocol() == IpProtocol::Tcp {
+                let tcp_bytes = ip_packet.payload();
+                let tcp_packet = TcpPacket::new_checked(tcp_bytes).unwrap();
+                log::trace!(
+                    "[{:?}] len={:?} tcp=[{}] tcp_len={:?} ip=[{}]",
+                    message,
+                    bytes.len(),
+                    tcp_packet,
+                    tcp_bytes.len(),
+                    ip_packet
+                );
+            } else {
+                log::trace!("[{:?}] len={:?} ip=[{}]", message, bytes.len(), ip_packet);
+            }
+        }
+        Err(error) => {
+            log::trace!("[{:?}] failed to log packet, error={:?}", message, error);
+        }
     }
 }

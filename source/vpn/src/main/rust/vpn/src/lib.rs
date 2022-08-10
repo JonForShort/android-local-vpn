@@ -59,10 +59,7 @@ pub mod android {
 
     macro_rules! vpn {
         () => {
-            VPN.lock()
-                .expect("lock vpn")
-                .as_mut()
-                .expect("get vpn as mutable")
+            VPN.lock().unwrap().as_mut().unwrap()
         };
     }
 
@@ -115,19 +112,17 @@ pub mod android {
     }
 
     fn update_vpn(file_descriptor: i32) {
-        let mut vpn = VPN.lock().expect("lock vpn");
+        let mut vpn = VPN.lock().unwrap();
         *vpn = Some(Vpn::new(file_descriptor));
     }
 
     fn set_panic_handler() {
-        log::trace!("setting panic handler");
         std::panic::set_hook(Box::new(|panic_info| {
-            log::error!("handling panic, [{:?}]", panic_info);
+            log::error!("*** PANIC [{:?}]", panic_info);
         }));
     }
 
     fn remove_panic_handler() {
-        log::trace!("removing panic handler");
         let _ = std::panic::take_hook();
     }
 }

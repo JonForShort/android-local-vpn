@@ -161,11 +161,7 @@ impl TcpLayerProcessor {
     pub fn stop(&mut self) {
         log::trace!("stopping tcp layer processor");
         self.is_thread_running.store(false, Ordering::SeqCst);
-        self.thread_join_handle
-            .take()
-            .expect("stop tcp layer processor thread")
-            .join()
-            .expect("join tcp layer processor thread");
+        self.thread_join_handle.take().unwrap().join().unwrap();
         log::trace!("tcp layer processor is stopped");
     }
 }

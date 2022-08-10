@@ -65,11 +65,7 @@ impl IpLayerProcessor {
     pub fn stop(&mut self) {
         log::trace!("stopping ip layer processor");
         self.is_thread_running.store(false, Ordering::SeqCst);
-        self.thread_join_handle
-            .take()
-            .expect("stop ip layer processor thread")
-            .join()
-            .expect("join ip layer processor thread");
+        self.thread_join_handle.take().unwrap().join().unwrap();
         log::trace!("ip layer processor is stopped");
     }
 }

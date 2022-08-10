@@ -29,8 +29,8 @@ macro_rules! socket_protector {
     () => {
         crate::socket_protector::socket_protector::SOCKET_PROTECTOR
             .lock()
-            .expect("lock socket protector")
+            .unwrap()
             .as_mut()
-            .expect("get socket protector as mutable")
+            .unwrap()
     };
 }

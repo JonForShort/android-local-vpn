@@ -53,14 +53,14 @@ impl FileDescriptorChannel {
         data_written_sender: Sender<Vec<u8>>,
         data_read_receiver: Receiver<Vec<u8>>,
     ) -> FileDescriptorChannel {
-        let poll = Poll::new().expect("new poll");
+        let poll = Poll::new().unwrap();
         poll.registry()
             .register(
                 &mut SourceFd(&file_descriptor),
                 Self::TOKEN,
                 Interest::READABLE,
             )
-            .expect("register file descriptor for polling");
+            .unwrap();
         FileDescriptorChannel {
             log_tag: log_tag.to_string(),
             file: unsafe { File::from_raw_fd(file_descriptor) },

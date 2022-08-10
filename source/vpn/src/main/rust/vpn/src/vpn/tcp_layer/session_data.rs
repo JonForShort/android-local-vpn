@@ -42,14 +42,14 @@ pub struct SessionData {
 impl SessionData {
     pub fn new() -> SessionData {
         SessionData {
-            poll: Poll::new().expect("new poll"),
+            poll: Poll::new().unwrap(),
             socket: None,
             events: Events::with_capacity(EVENT_CAPACITY),
         }
     }
 
     pub fn connect_stream(&mut self, ip: [u8; 4], port: u16) {
-        let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).expect("new socket");
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
         let raw_fd = socket.as_raw_fd();
         let is_socket_protected = socket_protector!().protect_socket(raw_fd);
@@ -61,7 +61,7 @@ impl SessionData {
         self.poll
             .registry()
             .register(&mut SourceFd(&raw_fd), Token(0), Interest::READABLE)
-            .expect("register file descriptor");
+            .unwrap();
 
         let remote_address = SockAddr::from(SocketAddr::from((ip, port)));
 
@@ -81,7 +81,7 @@ impl SessionData {
                     port,
                     remote_address
                 );
-                socket.set_nonblocking(true).expect("set socket non-blocking");
+                socket.set_nonblocking(true).unwrap();
             }
             Err(error_code) => {
                 log::error!(
@@ -109,7 +109,7 @@ impl SessionData {
 
     pub fn send_data(&mut self, bytes: &Vec<u8>) -> Result<usize> {
         let bytes_as_array = &bytes[..];
-        let result = self.socket.as_ref().expect("get socket").send(bytes_as_array);
+        let result = self.socket.as_ref().unwrap().send(bytes_as_array);
         if let Ok(size) = result {
             log::trace!(
                 "sent data to socket, size={:?}, data={:?}",
