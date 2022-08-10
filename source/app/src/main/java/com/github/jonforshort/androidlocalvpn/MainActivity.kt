@@ -166,7 +166,7 @@ private fun TestTab() {
                 }
             }
         ) {
-            Text("Google HTTP No Redirection")
+            Text("Google (HTTP)")
         }
 
         Button(
@@ -175,11 +175,68 @@ private fun TestTab() {
                 performJsoupRequest {
                     Jsoup
                         .connect("https://google.com/")
+                        .followRedirects(false)
                         .method(Connection.Method.GET)
                 }
             }
         ) {
-            Text("Google HTTPS")
+            Text("Google (HTTPS)")
+        }
+
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                performJsoupRequest {
+                    Jsoup
+                        .connect("http://httpbin.org/")
+                        .followRedirects(false)
+                        .method(Connection.Method.GET)
+                }
+            }
+        ) {
+            Text("HttpBin (HTTP)")
+        }
+
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                performJsoupRequest {
+                    Jsoup
+                        .connect("https://httpbin.org/")
+                        .followRedirects(false)
+                        .method(Connection.Method.GET)
+                }
+            }
+        ) {
+            Text("HttpBin (HTTPS)")
+        }
+
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                performJsoupRequest {
+                    Jsoup
+                        .connect("http://mirrors.edge.kernel.org/pub/site/README")
+                        .followRedirects(false)
+                        .method(Connection.Method.GET)
+                }
+            }
+        ) {
+            Text("Kernel (HTTP)")
+        }
+
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = {
+                performJsoupRequest {
+                    Jsoup
+                        .connect("https://mirrors.edge.kernel.org/pub/site/README")
+                        .followRedirects(false)
+                        .method(Connection.Method.GET)
+                }
+            }
+        ) {
+            Text("Kernel (HTTPS)")
         }
     }
 }
