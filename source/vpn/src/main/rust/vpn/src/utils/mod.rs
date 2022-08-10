@@ -22,6 +22,3 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 //
 // For more information, please refer to <https://unlicense.org>
-
-pub mod macros;
-pub mod service;
