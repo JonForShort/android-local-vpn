@@ -53,7 +53,7 @@ impl FileDescriptorChannel {
         data_written_sender: Sender<Vec<u8>>,
         data_read_receiver: Receiver<Vec<u8>>,
     ) -> FileDescriptorChannel {
-        let poll = Poll::new().unwrap();
+        let poll = Poll::new().expect("new poll");
         poll.registry()
             .register(
                 &mut SourceFd(&file_descriptor),

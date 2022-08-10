@@ -54,11 +54,11 @@ pub struct SocketProtector {
 
 impl SocketProtector {
     pub fn init(env: JNIEnv, _: JClass, object: JObject) {
-        let mut socket_protector = SOCKET_PROTECTOR.lock().unwrap();
-        let java_vm = Arc::new(env.get_java_vm().unwrap());
+        let mut socket_protector = SOCKET_PROTECTOR.lock().expect("lock socket protector");
+        let java_vm = Arc::new(env.get_java_vm().expect("get java vm"));
         *socket_protector = Some(SocketProtector {
             java_vm: java_vm,
-            object: env.new_global_ref(object).unwrap(),
+            object: env.new_global_ref(object).expect("get env"),
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
             channel: unbounded(),
@@ -74,7 +74,7 @@ impl SocketProtector {
         let receiver_channel = self.channel.1.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
             log::trace!("socket protecting thread is started");
-            let jni_env: JNIEnv = java_vm.attach_current_thread_permanently().unwrap();
+            let jni_env: JNIEnv = java_vm.attach_current_thread_permanently().expect("attach current thread");
             if let Some(method_id) = SocketProtector::create_protect_jni_method_id(jni_env) {
                 log::trace!("successfully created protect jni method ID");
                 while is_thread_running.load(Ordering::SeqCst) {
@@ -97,7 +97,7 @@ impl SocketProtector {
         vpn_service_object: JObject,
         protect_method_id: JMethodID,
     ) {
-        let (socket, reply_sender) = receiver.recv().unwrap();
+        let (socket, reply_sender) = receiver.recv().expect("receive request");
         log::trace!("handling protect socket request, socket={:?}", socket);
         if socket <= 0 {
             log::trace!("found invalid socket");
@@ -114,7 +114,7 @@ impl SocketProtector {
         match result {
             Ok(value) => {
                 log::trace!("finished protecting socket, result={:?}", value);
-                match reply_sender.send(value.z().unwrap()) {
+                match reply_sender.send(value.z().expect("send data")) {
                     Ok(_) => {
                         log::trace!("finished replying back to sender")
                     }
@@ -141,7 +141,7 @@ impl SocketProtector {
     }
 
     pub fn release() {
-        let mut socket_protector = SOCKET_PROTECTOR.lock().unwrap();
+        let mut socket_protector = SOCKET_PROTECTOR.lock().expect("lock socket protector");
         *socket_protector = None;
     }
 
@@ -162,7 +162,7 @@ impl SocketProtector {
         let reply_channel: (Sender<bool>, Receiver<bool>) = unbounded();
         match self.channel.0.send((socket, reply_channel.0)) {
             Ok(_) => {
-                let result = reply_channel.1.recv().unwrap();
+                let result = reply_channel.1.recv().expect("receive socket descriptor");
                 if result {
                     log::trace!("successfully protected socket, socket={:?}", socket);
                 } else {

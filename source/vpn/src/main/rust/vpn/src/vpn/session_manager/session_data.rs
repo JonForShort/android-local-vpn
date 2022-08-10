@@ -72,7 +72,7 @@ where
 fn create_routes<'a>() -> Routes<'a> {
     let mut routes = Routes::new(BTreeMap::new());
     let default_gateway_ipv4 = Ipv4Address::new(10, 0, 0, 2);
-    routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
+    routes.add_default_ipv4_route(default_gateway_ipv4).expect("add default ipv4 route");
     return routes;
 }
 
