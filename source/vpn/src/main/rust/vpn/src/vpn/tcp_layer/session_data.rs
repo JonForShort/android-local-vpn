@@ -26,8 +26,7 @@
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
-use std::io::Read;
-use std::io::Result;
+use std::io::{ErrorKind, Read, Result};
 use std::net::SocketAddr;
 use std::os::unix::io::AsRawFd;
 
@@ -105,6 +104,29 @@ impl SessionData {
         } else {
             return false;
         };
+    }
+
+    pub fn is_session_closed(&mut self) -> bool {
+        if let Some(socket) = &mut self.socket {
+            let mut buffer = Vec::new();
+            match socket.peek(buffer.as_mut_slice()) {
+                Ok(len) => {
+                    log::trace!("checking if session is closed, len={:?}", len);
+                    if len == 0 {
+                        return true;
+                    }
+                }
+                Err(error) => {
+                    if error.kind() == ErrorKind::WouldBlock {
+                        // Ignore this error.
+                        return false;
+                    } else {
+                        log::error!("failed to check if session is closed, error={:?}", error);
+                    }
+                }
+            }
+        }
+        return true;
     }
 
     pub fn send_data(&mut self, bytes: &Vec<u8>) -> Result<usize> {

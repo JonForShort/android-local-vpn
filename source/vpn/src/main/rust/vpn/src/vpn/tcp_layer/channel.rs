@@ -25,4 +25,10 @@
 
 use crate::vpn::channel::types::Channel;
 
-pub type TcpLayerChannel = Channel<([u8; 4], u16, [u8; 4], u16, Vec<u8>)>;
+pub enum TcpLayerControl {
+    SessionClosed([u8; 4], u16, [u8; 4], u16),
+}
+
+pub type TcpLayerControlChannel = Channel<TcpLayerControl>;
+
+pub type TcpLayerDataChannel = Channel<([u8; 4], u16, [u8; 4], u16, Vec<u8>)>;

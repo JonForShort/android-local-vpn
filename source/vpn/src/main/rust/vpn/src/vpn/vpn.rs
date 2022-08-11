@@ -40,16 +40,20 @@ pub struct Vpn {
 impl Vpn {
     pub fn new(file_descriptor: i32) -> Self {
         let ip_layer_channel = unbounded();
-        let tcp_layer_channel = unbounded();
+        let tcp_layer_data_channel = unbounded();
+        let tcp_layer_control_channel = unbounded();
         let session_manager_tcp_layer_channel = unbounded();
         let session_manager_ip_layer_channel = unbounded();
 
         let session_manager = SessionManager::new(
             (ip_layer_channel.0, session_manager_ip_layer_channel.1),
-            (tcp_layer_channel.0, session_manager_tcp_layer_channel.1),
+            (tcp_layer_data_channel.0, session_manager_tcp_layer_channel.1),
+            tcp_layer_control_channel.clone(),
         );
-        let tcp_layer_processor =
-            TcpLayerProcessor::new((session_manager_tcp_layer_channel.0, tcp_layer_channel.1));
+        let tcp_layer_processor = TcpLayerProcessor::new(
+            (session_manager_tcp_layer_channel.0, tcp_layer_data_channel.1),
+            tcp_layer_control_channel.clone(),
+        );
         let ip_layer_processor = IpLayerProcessor::new(
             file_descriptor,
             (session_manager_ip_layer_channel.0, ip_layer_channel.1),

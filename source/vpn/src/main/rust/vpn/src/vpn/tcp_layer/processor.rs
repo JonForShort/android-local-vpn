@@ -23,7 +23,8 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::channel::TcpLayerChannel;
+use super::channel::TcpLayerControl;
+use super::channel::{TcpLayerControlChannel, TcpLayerDataChannel};
 use super::session::Session as TcpSession;
 use super::session_data::SessionData as TcpSessionData;
 use crate::vpn::channel::types::TryRecvError;
@@ -35,15 +36,20 @@ use std::thread::JoinHandle;
 type TcpSessions<'a> = HashMap<TcpSession, TcpSessionData>;
 
 pub struct TcpLayerProcessor {
-    channel: TcpLayerChannel,
+    data_channel: TcpLayerDataChannel,
+    control_channel: TcpLayerControlChannel,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl TcpLayerProcessor {
-    pub fn new(channel: TcpLayerChannel) -> TcpLayerProcessor {
+    pub fn new(
+        data_channel: TcpLayerDataChannel,
+        control_channel: TcpLayerControlChannel,
+    ) -> TcpLayerProcessor {
         TcpLayerProcessor {
-            channel: channel,
+            data_channel: data_channel,
+            control_channel: control_channel,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
         }
@@ -53,20 +59,25 @@ impl TcpLayerProcessor {
         log::trace!("starting tcp layer processor");
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
-        let channel = self.channel.clone();
+        let data_channel = self.data_channel.clone();
+        let control_channel = self.control_channel.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
-            let channel = channel.clone();
+            let data_channel = data_channel.clone();
             let mut sessions = TcpSessions::new();
             while is_thread_running.load(Ordering::SeqCst) {
-                TcpLayerProcessor::process_incoming_tcp_layer_data(&mut sessions, &channel);
-                TcpLayerProcessor::poll_sessions(&mut sessions, &channel);
+                TcpLayerProcessor::process_incoming_tcp_layer_data(&mut sessions, &data_channel);
+                TcpLayerProcessor::poll_sessions(&mut sessions, &data_channel);
+                TcpLayerProcessor::clean_up_sessions(&mut sessions, &control_channel);
             }
             log::trace!("tcp layer processor is stopping");
         }));
     }
 
-    fn process_incoming_tcp_layer_data(sessions: &mut TcpSessions, channel: &TcpLayerChannel) {
-        let result = channel.1.try_recv();
+    fn process_incoming_tcp_layer_data(
+        sessions: &mut TcpSessions,
+        data_channel: &TcpLayerDataChannel,
+    ) {
+        let result = data_channel.1.try_recv();
         match result {
             Ok((dst_ip, dst_port, src_ip, src_port, bytes)) => {
                 log::trace!(
@@ -133,13 +144,13 @@ impl TcpLayerProcessor {
         }
     }
 
-    fn poll_sessions(sessions: &mut TcpSessions, channel: &TcpLayerChannel) {
+    fn poll_sessions(sessions: &mut TcpSessions, data_channel: &TcpLayerDataChannel) {
         for (session, session_data) in sessions.iter_mut() {
             if session_data.is_data_available() {
                 log::trace!("data is available, session=[{:?}]", session);
                 let data = session_data.read_data();
                 log::trace!("read data, count={:?}, session=[{:?}]", data.len(), session);
-                let result = channel.0.send((
+                let result = data_channel.0.send((
                     session.dst_ip,
                     session.dst_port,
                     session.src_ip,
@@ -156,6 +167,24 @@ impl TcpLayerProcessor {
                 }
             }
         }
+    }
+
+    fn clean_up_sessions(sessions: &mut TcpSessions, control_channel: &TcpLayerControlChannel) {
+        sessions.retain(|session, session_data| {
+            if session_data.is_session_closed() {
+                log::trace!("cleaning up closed session, session=[{:?}]", session);
+                let session_closed_control = TcpLayerControl::SessionClosed(
+                    session.dst_ip,
+                    session.dst_port,
+                    session.src_ip,
+                    session.src_port,
+                );
+                control_channel.0.send(session_closed_control);
+                return false;
+            } else {
+                return true;
+            }
+        });
     }
 
     pub fn stop(&mut self) {
