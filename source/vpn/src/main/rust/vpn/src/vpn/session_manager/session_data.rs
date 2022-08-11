@@ -77,8 +77,8 @@ fn create_routes<'a>() -> Routes<'a> {
 }
 
 fn create_tcp_socket<'a>() -> TcpSocket<'a> {
-    let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 1024]);
-    let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 1024]);
+    let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 1048576]);
+    let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 1048576]);
     return TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 }
 

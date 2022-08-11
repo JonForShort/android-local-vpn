@@ -76,6 +76,7 @@ impl SessionManager {
                 SessionManager::process_outgoing_ip_layer_data(&mut sessions, &ip_layer_channel);
                 SessionManager::process_incoming_tcp_layer_data(&mut sessions, &tcp_layer_channel);
                 SessionManager::poll_sessions(&mut sessions, &ip_layer_channel, &tcp_layer_channel);
+                SessionManager::log_sessions(&mut sessions);
             }
             log::trace!("session manager is stopping");
         }));
@@ -88,51 +89,68 @@ impl SessionManager {
     ) {
         for (session, session_data) in sessions.iter_mut() {
             let interface = session_data.interface();
-            let is_packets_ready = interface.poll(Instant::now()).unwrap();
-            if is_packets_ready {
-                log::trace!("[{}] session is ready", session);
-                let tcp_socket = session_data.tcp_socket();
-                if tcp_socket.may_recv() {
-                    log::trace!(
-                        "[{}] socket may receive, queue_size={:?}",
-                        session,
-                        tcp_socket.recv_queue()
+            interface.poll(Instant::now()).unwrap();
+            SessionManager::process_received_tcp_data(session, session_data, tcp_layer_channel);
+            SessionManager::process_sent_tcp_data(session, session_data, ip_layer_channel);
+        }
+    }
+
+    fn process_received_tcp_data(
+        session: &Session,
+        session_data: &mut SessionData<VpnDevice>,
+        channel: &TcpLayerChannel,
+    ) {
+        let device = session_data.interface().device_mut();
+        log::trace!("[{}] rx_queue size {}", session, device.rx_queue.len());
+
+        let tcp_socket = session_data.tcp_socket();
+        if tcp_socket.may_recv() {
+            let result = session_data.tcp_socket().recv(|buffer| {
+                if !buffer.is_empty() {
+                    let tcp_data = (
+                        session.dst_ip,
+                        session.dst_port,
+                        session.src_ip,
+                        session.src_port,
+                        buffer.to_vec(),
                     );
-                    let result = tcp_socket.recv(|buffer| {
-                        log::trace!("tcp socket receiving buffer size [{:?}]", buffer.len());
-                        if !buffer.is_empty() {
-                            log::trace!("tcp buffer is not empty; sending buffer to tcp layer");
-                            let tcp_data = (
-                                session.dst_ip,
-                                session.dst_port,
-                                session.src_ip,
-                                session.src_port,
-                                buffer.to_vec(),
-                            );
-                            if let Err(error) = tcp_layer_channel.0.send(tcp_data) {
-                                log::error!("failed to send tcp buffer, error={:?}", error);
-                            }
+                    let result = channel.0.send(tcp_data);
+                    match result {
+                        Ok(_) => {
+                            log::trace!("sent buffer to tcp layer, count={:?}", buffer.len(),);
                         }
-                        (buffer.len(), buffer)
-                    });
-                    if let Err(error) = result {
-                        log::error!("failed to receive from tcp socket, error={:?}", error)
+                        Err(error) => {
+                            log::error!("failed to send buffer to tcp layer, error={:?}", error);
+                        }
                     }
                 }
-                if tcp_socket.may_send() {
+                (buffer.len(), buffer)
+            });
+            if let Err(error) = result {
+                log::error!("failed to receive from tcp socket, error={:?}", error)
+            }
+        }
+    }
+
+    fn process_sent_tcp_data(
+        session: &Session,
+        session_data: &mut SessionData<VpnDevice>,
+        channel: &IpLayerChannel,
+    ) {
+        let device = session_data.interface().device_mut();
+        log::trace!("[{}] tx_queue size {}", session, device.tx_queue.len());
+
+        for bytes in device.tx_queue.pop_front() {
+            let result = channel.0.send(bytes.clone());
+            match result {
+                Ok(_) => {
                     log::trace!(
-                        "[{}] socket may send, queue_size={:?}",
-                        session,
-                        tcp_socket.send_queue()
+                        "successfully sent bytes to ip layer, count={:?}",
+                        bytes.len()
                     );
                 }
-                let device = session_data.interface().device_mut();
-                log::trace!("[{}] rx_queue size {}", session, device.rx_queue.len());
-                log::trace!("[{}] tx_queue size {}", session, device.tx_queue.len());
-                for bytes in device.tx_queue.pop_front() {
-                    if let Err(error) = ip_layer_channel.0.send(bytes.clone()) {
-                        log::error!("failed to send bytes to ip layer, error=[{:?}]", error);
-                    }
+                Err(error) => {
+                    log::error!("failed to send bytes to ip layer, error=[{:?}]", error);
                 }
             }
         }
@@ -176,22 +194,32 @@ impl SessionManager {
     }
 
     fn build_session(bytes: &Vec<u8>) -> Option<Session> {
-        let ip_packet = Ipv4Packet::new_checked(&bytes).expect("truncated ip packet");
-        if ip_packet.protocol() == IpProtocol::Tcp {
-            let payload = ip_packet.payload();
-            let tcp_packet = TcpPacket::new_checked(payload).expect("invalid tcp packet");
-            let src_ip_bytes = ip_packet.src_addr().as_bytes().clone().try_into().unwrap();
-            let dst_ip_bytes = ip_packet.dst_addr().as_bytes().clone().try_into().unwrap();
-            Some(Session {
-                src_ip: src_ip_bytes,
-                src_port: tcp_packet.src_port(),
-                dst_ip: dst_ip_bytes,
-                dst_port: tcp_packet.dst_port(),
-                protocol: u8::from(ip_packet.protocol()),
-            })
-        } else {
-            None
+        let result = Ipv4Packet::new_checked(&bytes);
+        match result {
+            Ok(ip_packet) => {
+                if ip_packet.protocol() == IpProtocol::Tcp {
+                    let payload = ip_packet.payload();
+                    let tcp_packet = TcpPacket::new_checked(payload).unwrap();
+                    let src_ip_bytes = ip_packet.src_addr().as_bytes().clone().try_into().unwrap();
+                    let dst_ip_bytes = ip_packet.dst_addr().as_bytes().clone().try_into().unwrap();
+                    return Some(Session {
+                        src_ip: src_ip_bytes,
+                        src_port: tcp_packet.src_port(),
+                        dst_ip: dst_ip_bytes,
+                        dst_port: tcp_packet.dst_port(),
+                        protocol: u8::from(ip_packet.protocol()),
+                    });
+                }
+            }
+            Err(error) => {
+                log::trace!(
+                    "failed to build session, len={:?}, error={:?}",
+                    bytes.len(),
+                    error
+                );
+            }
         }
+        return None;
     }
 
     fn process_incoming_tcp_layer_data(sessions: &mut Sessions, channel: &TcpLayerChannel) {
@@ -206,6 +234,34 @@ impl SessionManager {
                     src_ip,
                     src_port
                 );
+                let session = Session {
+                    dst_ip: dst_ip,
+                    dst_port: dst_port,
+                    src_ip: src_ip,
+                    src_port: src_port,
+                    protocol: u8::from(IpProtocol::Tcp),
+                };
+                if let Some(session_data) = sessions.get_mut(&session) {
+                    let tcp_socket = session_data.tcp_socket();
+                    if tcp_socket.can_send() {
+                        tcp_socket.send_slice(&bytes[..]).unwrap();
+                        log::trace!("successfully sent incoming tcp layer data back to socket");
+                    } else {
+                        log::error!(
+                            "failed to process incoming tcp layer data; cannot send back to socket, session={:?} count={:?} state={:?} capacity={:?} queue={:?}",
+                            session,
+                            bytes.len(),
+                            tcp_socket.state(),
+                            tcp_socket.send_capacity(),
+                            tcp_socket.send_queue()
+                        );
+                    }
+                } else {
+                    log::error!(
+                        "failed to process incoming tcp layer data; unable to find session{:?}",
+                        session
+                    );
+                }
             }
             Err(error) => {
                 if error == TryRecvError::Empty {
@@ -221,14 +277,23 @@ impl SessionManager {
         }
     }
 
+    fn log_sessions(sessions: &mut Sessions) {
+        log::trace!("starting to log sessions");
+        for (index, (session, session_data)) in sessions.iter_mut().enumerate() {
+            log::trace!(
+                "session #{:?}: session={:?} state={:?}",
+                index,
+                session,
+                session_data.tcp_socket().state()
+            )
+        }
+        log::trace!("finished logging sessions");
+    }
+
     pub fn stop(&mut self) {
         log::trace!("stopping session manager");
         self.is_thread_running.store(false, Ordering::SeqCst);
-        self.thread_join_handle
-            .take()
-            .expect("stop session manager thread")
-            .join()
-            .expect("join session manager thread");
+        self.thread_join_handle.take().unwrap().join().unwrap();
         log::trace!("session manager is stopped");
     }
 }
