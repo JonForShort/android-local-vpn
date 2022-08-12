@@ -23,6 +23,35 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-pub mod channel;
-mod packet_parser;
-pub mod processor;
+use smoltcp::wire::Ipv4Packet;
+
+pub struct PacketParser {
+    queue: Vec<u8>,
+}
+
+impl PacketParser {
+    pub fn new() -> PacketParser {
+        PacketParser { queue: Vec::new() }
+    }
+
+    pub fn input_bytes(&mut self, bytes: &mut Vec<u8>) {
+        self.queue.append(bytes);
+    }
+
+    pub fn next_packet(&mut self) -> Option<Vec<u8>> {
+        let result = Ipv4Packet::new_checked(&self.queue);
+        match result {
+            Ok(packet) => {
+                let len = packet.to_owned().total_len() as usize;
+                return Some(self.queue.drain(0..len).collect());
+            }
+            Err(error) if error == smoltcp::Error::Truncated => {
+                return None;
+            }
+            Err(error) => {
+                log::error!("failed to parse packet, error={:?}", error);
+                return None;
+            }
+        }
+    }
+}

@@ -24,6 +24,7 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::channel::IpLayerChannel;
+use super::packet_parser::PacketParser;
 use crate::smoltcp_ext::wire::log_packet;
 use crate::std_ext::fs::FileExt;
 use crate::vpn::channel::types::TryRecvError;
@@ -44,8 +45,8 @@ pub struct IpLayerProcessor {
 impl IpLayerProcessor {
     pub fn new(file_descriptor: i32, channel: IpLayerChannel) -> IpLayerProcessor {
         IpLayerProcessor {
-            file_descriptor: file_descriptor,
-            channel: channel,
+            file_descriptor,
+            channel,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
         }
@@ -58,21 +59,24 @@ impl IpLayerProcessor {
         let channel = self.channel.clone();
         let mut file = unsafe { File::from_raw_fd(self.file_descriptor) };
         self.thread_join_handle = Some(std::thread::spawn(move || {
+            let mut packet_parser = PacketParser::new();
             while is_thread_running.load(Ordering::SeqCst) {
-                IpLayerProcessor::poll_outgoing_data(&mut file, &channel);
+                IpLayerProcessor::poll_outgoing_data(&mut packet_parser, &mut file, &channel);
                 IpLayerProcessor::poll_incoming_data(&mut file, &channel)
             }
             log::trace!("ip layer processor is stopping");
         }));
     }
 
-    fn poll_outgoing_data(file: &mut File, channel: &IpLayerChannel) {
+    fn poll_outgoing_data(packet_parser: &mut PacketParser, file: &mut File, channel: &IpLayerChannel) {
         match file.read_all_bytes() {
-            Ok(bytes) => {
-                if bytes.len() > 0 {
+            Ok(mut bytes) => {
+                packet_parser.input_bytes(&mut bytes);
+                let packet_bytes = packet_parser.next_packet();
+                if let Some(bytes) = packet_bytes {
                     log_packet("ip layer : outgoing", &bytes);
-                    let send_result = channel.0.send(bytes);
-                    match send_result {
+                    let result = channel.0.send(bytes);
+                    match result {
                         Ok(_) => {
                             // nothing to do here.
                         }

@@ -160,7 +160,6 @@ private fun TestTab() {
 @Composable
 private fun TestButton(text: String, url: String) {
     val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     fun performJsoupRequest(onRequestStarted: () -> Unit, onRequestFinished: (Boolean) -> Unit) {
         coroutineScope.launch(Dispatchers.IO) {
