@@ -24,7 +24,12 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::channel::IpLayerChannel;
-use crate::vpn::channel::utils::FileDescriptorChannel;
+use crate::smoltcp_ext::wire::log_packet;
+use crate::std_ext::fs::FileExt;
+use crate::vpn::channel::types::TryRecvError;
+use std::fs::File;
+use std::io::Write;
+use std::os::unix::io::FromRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -50,16 +55,61 @@ impl IpLayerProcessor {
         log::trace!("starting ip layer processor");
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
-        let file_descriptor = self.file_descriptor;
         let channel = self.channel.clone();
+        let mut file = unsafe { File::from_raw_fd(self.file_descriptor) };
         self.thread_join_handle = Some(std::thread::spawn(move || {
-            let mut file_descriptor_channel =
-                FileDescriptorChannel::new("ip layer", file_descriptor, channel.0, channel.1);
             while is_thread_running.load(Ordering::SeqCst) {
-                file_descriptor_channel.poll(Some(std::time::Duration::from_millis(100)));
+                IpLayerProcessor::poll_outgoing_data(&mut file, &channel);
+                IpLayerProcessor::poll_incoming_data(&mut file, &channel)
             }
             log::trace!("ip layer processor is stopping");
         }));
+    }
+
+    fn poll_outgoing_data(file: &mut File, channel: &IpLayerChannel) {
+        match file.read_all_bytes() {
+            Ok(bytes) => {
+                if bytes.len() > 0 {
+                    log_packet("ip layer : outgoing", &bytes);
+                    let send_result = channel.0.send(bytes);
+                    match send_result {
+                        Ok(_) => {
+                            // nothing to do here.
+                        }
+                        Err(error) => {
+                            log::error!("failed to send outgoing data, error={:?}", error)
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                log::error!("failed to read from file descriptor, error={:?}", error);
+            }
+        }
+    }
+
+    fn poll_incoming_data(file: &mut File, channel: &IpLayerChannel) {
+        let result = channel.1.try_recv();
+        match result {
+            Ok(bytes) => {
+                log_packet("ip layer : incoming", &bytes);
+                match file.write_all(&bytes[..]) {
+                    Ok(_) => {
+                        // nothing to do here.
+                    }
+                    Err(error) => {
+                        log::error!("failed to write to file descriptor, error=[{:?}]", error);
+                    }
+                }
+            }
+            Err(error) => {
+                if error == TryRecvError::Empty {
+                    // nothing to do.
+                } else {
+                    log::error!("failed to read incoming data, error={:?}", error);
+                }
+            }
+        }
     }
 
     pub fn stop(&mut self) {

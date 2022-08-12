@@ -24,4 +24,3 @@
 // For more information, please refer to <https://unlicense.org>
 
 pub mod types;
-pub mod utils;

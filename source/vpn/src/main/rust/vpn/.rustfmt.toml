@@ -1,3 +1,9 @@
+#
+# To print default configuration
+#
+# rustfmt --print-config default
+#
+
 array_width = 60
 attr_fn_like_width = 70
 binop_separator = "Front"
