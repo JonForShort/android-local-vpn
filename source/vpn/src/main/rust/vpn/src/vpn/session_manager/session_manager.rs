@@ -30,7 +30,8 @@ use super::session_data::SessionData;
 use crate::smoltcp_ext::wire::log_packet;
 use crate::vpn::channel::types::TryRecvError;
 use crate::vpn::ip_layer::channel::IpLayerChannel;
-use crate::vpn::tcp_layer::channel::{TcpLayerControl, TcpLayerControlChannel, TcpLayerDataChannel};
+use crate::vpn::tcp_layer::channel::TcpLayerDataChannel;
+use crate::vpn::tcp_layer::channel::{TcpLayerControl, TcpLayerControlChannel};
 use crate::vpn::vpn_device::VpnDevice;
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
@@ -78,8 +79,15 @@ impl SessionManager {
             let tcp_layer_data_channel = tcp_layer_data_channel;
             while is_thread_running.load(Ordering::SeqCst) {
                 SessionManager::process_outgoing_ip_layer_data(&mut sessions, &ip_layer_channel);
-                SessionManager::process_incoming_tcp_layer_data(&mut sessions, &tcp_layer_data_channel);
-                SessionManager::poll_sessions(&mut sessions, &ip_layer_channel, &tcp_layer_data_channel);
+                SessionManager::process_incoming_tcp_layer_data(
+                    &mut sessions,
+                    &tcp_layer_data_channel,
+                );
+                SessionManager::poll_sessions(
+                    &mut sessions,
+                    &ip_layer_channel,
+                    &tcp_layer_data_channel,
+                );
                 SessionManager::poll_tcp_layer_controls(&mut sessions, &tcp_layer_control_channel);
                 SessionManager::log_sessions(&mut sessions);
             }
@@ -217,7 +225,7 @@ impl SessionManager {
                 }
             }
             Err(error) => {
-                log::trace!(
+                log::error!(
                     "failed to build session, len={:?}, error={:?}",
                     bytes.len(),
                     error

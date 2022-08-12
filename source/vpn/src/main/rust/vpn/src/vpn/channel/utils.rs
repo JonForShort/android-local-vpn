@@ -141,8 +141,7 @@ impl FileDescriptorChannel {
             }
             Err(error) => {
                 if error == TryRecvError::Empty {
-                    // wait for before trying again.
-                    std::thread::sleep(std::time::Duration::from_millis(500))
+                    // nothing to do.
                 } else {
                     log::error!("failed to receive read data, error={:?}", error);
                 }

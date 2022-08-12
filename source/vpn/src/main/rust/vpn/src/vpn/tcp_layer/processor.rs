@@ -162,7 +162,7 @@ impl TcpLayerProcessor {
                         log::trace!("successfully sent data to session manager")
                     }
                     Err(error) => {
-                        log::trace!("failed to send data to session manager, error={:?}", error)
+                        log::error!("failed to send data to session manager, error={:?}", error)
                     }
                 }
             }
@@ -179,7 +179,18 @@ impl TcpLayerProcessor {
                     session.src_ip,
                     session.src_port,
                 );
-                control_channel.0.send(session_closed_control);
+                let result = control_channel.0.send(session_closed_control);
+                match result {
+                    Ok(_) => {
+                        log::trace!(
+                            "successfully sent session closed control, session=[{:?}]",
+                            session
+                        );
+                    }
+                    Err(error) => {
+                        log::error!("failed to send session closed control, error={:?}", error)
+                    }
+                }
                 return false;
             } else {
                 return true;
