@@ -148,7 +148,7 @@ impl TcpLayerProcessor {
         for (session, session_data) in sessions.iter_mut() {
             if session_data.is_data_available() {
                 log::trace!("data is available, session=[{:?}]", session);
-                let data = session_data.read_data();
+                let data = session_data.read_data().unwrap();
                 log::trace!("read data, count={:?}, session=[{:?}]", data.len(), session);
                 let result = data_channel.0.send((
                     session.dst_ip,

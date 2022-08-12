@@ -142,39 +142,29 @@ impl SessionData {
         return result;
     }
 
-    pub fn read_data(&mut self) -> Vec<u8> {
-        let buffer_size = 1024;
-        let mut request_buffer: Vec<u8> = vec![];
+    pub fn read_data(&mut self) -> Result<Vec<u8>> {
+        let mut bytes: Vec<u8> = Vec::new();
+        let mut read_buffer = [0; 1024];
         if let Some(socket) = &mut self.socket {
             loop {
-                log::trace!("attempting to read data from tcp socket");
-                let mut buffer = vec![0; buffer_size];
-                match socket.read(&mut buffer) {
-                    Ok(read_size) => {
-                        log::trace!("read data from tcp socket, size={:?}", read_size);
-                        if read_size <= 0 {
-                            log::trace!("no more data read from tcp socket");
+                let result = socket.read(&mut read_buffer[..]);
+                match result {
+                    Ok(read_bytes) => {
+                        if read_bytes == 0 {
+                            break;
+                        }
+                        bytes.extend_from_slice(&read_buffer[..read_bytes]);
+                    }
+                    Err(error_code) => {
+                        if error_code.kind() == ErrorKind::WouldBlock {
                             break;
                         } else {
-                            unsafe {
-                                buffer.set_len(read_size);
-                            }
-                            request_buffer.append(&mut buffer);
+                            return Err(error_code);
                         }
-                    }
-                    Err(error) => {
-                        log::error!("read data from tcp socket failed, error={:?}", error);
-                        break;
                     }
                 }
             }
-        } else {
-            log::error!("read data from tcp socket failed; socket does not exist");
         }
-        log::trace!(
-            "finished reading data from tcp socket, count={:?}",
-            request_buffer.len()
-        );
-        return request_buffer;
+        return Ok(bytes);
     }
 }
