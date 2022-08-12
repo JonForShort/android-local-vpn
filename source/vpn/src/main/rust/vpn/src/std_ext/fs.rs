@@ -28,7 +28,7 @@ extern crate log;
 use std::fs::File;
 use std::io::{ErrorKind, Read, Result};
 
-const BUFFER_READ_SIZE: usize = 256;
+const BUFFER_READ_SIZE: usize = 1024;
 
 pub trait FileExt {
     fn read_all_bytes(&mut self) -> Result<Vec<u8>>;

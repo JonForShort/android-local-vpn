@@ -28,7 +28,6 @@ package com.github.jonforshort.androidlocalvpn
 
 import android.net.VpnService
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
@@ -37,13 +36,11 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
+import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
@@ -59,7 +56,6 @@ import com.google.accompanist.pager.pagerTabIndicatorOffset
 import com.google.accompanist.pager.rememberPagerState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.jsoup.Connection
 import org.jsoup.Jsoup
 import timber.log.Timber.d
@@ -127,117 +123,86 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun TestTab() {
+
+    Column {
+        TestButton(
+            text = "Google (HTTP)",
+            url = "http://google.com/"
+        )
+
+        TestButton(
+            text = "Google (HTTPS)",
+            url = "https://google.com/"
+        )
+
+        TestButton(
+            text = "HttpBin (HTTP)",
+            url = "http://httpbin.org"
+        )
+
+        TestButton(
+            text = "HttpBin (HTTPS)",
+            url = "https://httpbin.org"
+        )
+
+        TestButton(
+            text = "Kernel (HTTP)",
+            url = "http://mirrors.edge.kernel.org/pub/site/README"
+        )
+
+        TestButton(
+            text = "Kernel (HTTPS)",
+            url = "https://mirrors.edge.kernel.org/pub/site/README"
+        )
+    }
+}
+
+@Composable
+private fun TestButton(text: String, url: String) {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    fun performJsoupRequest(createJsoupConnection: () -> Connection) {
+    fun performJsoupRequest(onRequestStarted: () -> Unit, onRequestFinished: (Boolean) -> Unit) {
         coroutineScope.launch(Dispatchers.IO) {
-            val conn = createJsoupConnection()
+            onRequestStarted()
+            val conn = Jsoup
+                .connect(url)
+                .followRedirects(false)
+                .method(Connection.Method.GET)
             try {
                 val resp = conn.execute()
                 val html = resp.body()
-
                 d("dumping html, count=${html.length}")
                 d(html)
                 d("done dumping html")
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Success", Toast.LENGTH_LONG).show()
-                }
+                onRequestFinished(true)
             } catch (e: IOException) {
                 e(e)
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Error", Toast.LENGTH_LONG).show()
-                }
+                onRequestFinished(false)
             }
         }
     }
 
-    Column {
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                performJsoupRequest {
-                    Jsoup
-                        .connect("http://google.com/")
-                        .followRedirects(false)
-                        .method(Connection.Method.GET)
-                }
-            }
-        ) {
-            Text("Google (HTTP)")
-        }
+    val buttonColor = remember { mutableStateOf(Color.Magenta) }
 
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                performJsoupRequest {
-                    Jsoup
-                        .connect("https://google.com/")
-                        .followRedirects(false)
-                        .method(Connection.Method.GET)
-                }
-            }
-        ) {
-            Text("Google (HTTPS)")
+    Button(
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(backgroundColor = buttonColor.value),
+        onClick = {
+            performJsoupRequest(
+                onRequestStarted = {
+                    buttonColor.value = Color.LightGray
+                },
+                onRequestFinished = { isSuccessful ->
+                    if (isSuccessful) {
+                        buttonColor.value = Color.Green
+                    } else {
+                        buttonColor.value = Color.Red
+                    }
+                })
         }
-
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                performJsoupRequest {
-                    Jsoup
-                        .connect("http://httpbin.org/")
-                        .followRedirects(false)
-                        .method(Connection.Method.GET)
-                }
-            }
-        ) {
-            Text("HttpBin (HTTP)")
-        }
-
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                performJsoupRequest {
-                    Jsoup
-                        .connect("https://httpbin.org/")
-                        .followRedirects(false)
-                        .method(Connection.Method.GET)
-                }
-            }
-        ) {
-            Text("HttpBin (HTTPS)")
-        }
-
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                performJsoupRequest {
-                    Jsoup
-                        .connect("http://mirrors.edge.kernel.org/pub/site/README")
-                        .followRedirects(false)
-                        .method(Connection.Method.GET)
-                }
-            }
-        ) {
-            Text("Kernel (HTTP)")
-        }
-
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                performJsoupRequest {
-                    Jsoup
-                        .connect("https://mirrors.edge.kernel.org/pub/site/README")
-                        .followRedirects(false)
-                        .method(Connection.Method.GET)
-                }
-            }
-        ) {
-            Text("Kernel (HTTPS)")
-        }
+    ) {
+        Text(text)
     }
 }
 
