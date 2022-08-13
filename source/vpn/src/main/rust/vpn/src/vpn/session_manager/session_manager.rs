@@ -30,8 +30,7 @@ use super::session_data::SessionData;
 use crate::smoltcp_ext::wire::log_packet;
 use crate::vpn::channel::types::TryRecvError;
 use crate::vpn::ip_layer::channel::IpLayerChannel;
-use crate::vpn::tcp_layer::channel::TcpLayerDataChannel;
-use crate::vpn::tcp_layer::channel::{TcpLayerControl, TcpLayerControlChannel};
+use crate::vpn::tcp_layer::channel::TcpLayerChannel;
 use crate::vpn::vpn_device::VpnDevice;
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
@@ -45,22 +44,16 @@ type Sessions<'a> = HashMap<Session, SessionData<'a, VpnDevice>>;
 
 pub struct SessionManager {
     ip_layer_channel: IpLayerChannel,
-    tcp_layer_data_channel: TcpLayerDataChannel,
-    tcp_layer_control_channel: TcpLayerControlChannel,
+    tcp_layer_channel: TcpLayerChannel,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl SessionManager {
-    pub fn new(
-        ip_layer_channel: IpLayerChannel,
-        tcp_layer_data_channel: TcpLayerDataChannel,
-        tcp_layer_control_channel: TcpLayerControlChannel,
-    ) -> SessionManager {
+    pub fn new(ip_layer_channel: IpLayerChannel, tcp_layer_channel: TcpLayerChannel) -> SessionManager {
         SessionManager {
             ip_layer_channel: ip_layer_channel,
-            tcp_layer_data_channel: tcp_layer_data_channel,
-            tcp_layer_control_channel: tcp_layer_control_channel,
+            tcp_layer_channel: tcp_layer_channel,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
         }
@@ -71,51 +64,30 @@ impl SessionManager {
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
         let ip_layer_channel = self.ip_layer_channel.clone();
-        let tcp_layer_data_channel = self.tcp_layer_data_channel.clone();
-        let tcp_layer_control_channel = self.tcp_layer_control_channel.clone();
+        let tcp_layer_channel = self.tcp_layer_channel.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
             let mut sessions = Sessions::new();
             let ip_layer_channel = ip_layer_channel;
-            let tcp_layer_data_channel = tcp_layer_data_channel;
+            let tcp_layer_channel = tcp_layer_channel;
             while is_thread_running.load(Ordering::SeqCst) {
                 SessionManager::process_outgoing_ip_layer_data(&mut sessions, &ip_layer_channel);
-                SessionManager::process_incoming_tcp_layer_data(
-                    &mut sessions,
-                    &tcp_layer_data_channel,
-                );
-                SessionManager::poll_sessions(
-                    &mut sessions,
-                    &ip_layer_channel,
-                    &tcp_layer_data_channel,
-                );
-                SessionManager::poll_tcp_layer_controls(&mut sessions, &tcp_layer_control_channel);
-                SessionManager::log_sessions(&mut sessions);
+                SessionManager::process_incoming_tcp_layer_data(&mut sessions, &tcp_layer_channel);
+                SessionManager::poll_sessions(&mut sessions, &ip_layer_channel, &tcp_layer_channel);
             }
             log::trace!("session manager is stopping");
         }));
     }
 
-    fn poll_sessions(
-        sessions: &mut Sessions,
-        ip_layer_channel: &IpLayerChannel,
-        tcp_layer_channel: &TcpLayerDataChannel,
-    ) {
+    fn poll_sessions(sessions: &mut Sessions, ip_layer_channel: &IpLayerChannel, tcp_layer_channel: &TcpLayerChannel) {
         for (session, session_data) in sessions.iter_mut() {
             let interface = session_data.interface();
             interface.poll(Instant::now()).unwrap();
             SessionManager::process_received_tcp_data(session, session_data, tcp_layer_channel);
-            SessionManager::process_sent_tcp_data(session, session_data, ip_layer_channel);
+            SessionManager::process_sent_tcp_data(session_data, ip_layer_channel);
         }
     }
 
-    fn process_received_tcp_data(
-        session: &Session,
-        session_data: &mut SessionData<VpnDevice>,
-        channel: &TcpLayerDataChannel,
-    ) {
-        let device = session_data.interface().device_mut();
-        log::trace!("[{}] rx_queue size {}", session, device.rx_queue.len());
-
+    fn process_received_tcp_data(session: &Session, session_data: &mut SessionData<VpnDevice>, channel: &TcpLayerChannel) {
         let tcp_socket = session_data.tcp_socket();
         if tcp_socket.may_recv() {
             let result = session_data.tcp_socket().recv(|buffer| {
@@ -145,15 +117,10 @@ impl SessionManager {
         }
     }
 
-    fn process_sent_tcp_data(
-        session: &Session,
-        session_data: &mut SessionData<VpnDevice>,
-        channel: &IpLayerChannel,
-    ) {
+    fn process_sent_tcp_data(session_data: &mut SessionData<VpnDevice>, channel: &IpLayerChannel) {
         let device = session_data.interface().device_mut();
-        log::trace!("[{}] tx_queue size {}", session, device.tx_queue.len());
-
         for bytes in device.tx_queue.pop_front() {
+            log_packet("session manager : to ip layer", &bytes);
             let result = channel.0.send(bytes.clone());
             match result {
                 Ok(_) => {
@@ -173,7 +140,7 @@ impl SessionManager {
         let result = channel.1.try_recv();
         match result {
             Ok(bytes) => {
-                log_packet("outgoing ip packet", &bytes);
+                log_packet("session manager : from ip layer", &bytes);
                 if let Some(session) = SessionManager::build_session(&bytes) {
                     if sessions.contains_key(&session) {
                         log::trace!("session already exists, session=[{:?}]", session);
@@ -194,8 +161,7 @@ impl SessionManager {
             }
             Err(error) => {
                 if error == TryRecvError::Empty {
-                    // wait for before trying again.
-                    std::thread::sleep(std::time::Duration::from_millis(500))
+                    // do nothing.
                 } else {
                     log::error!(
                         "failed to receive outgoing ip layer data, error={:?}",
@@ -235,7 +201,7 @@ impl SessionManager {
         return None;
     }
 
-    fn process_incoming_tcp_layer_data(sessions: &mut Sessions, channel: &TcpLayerDataChannel) {
+    fn process_incoming_tcp_layer_data(sessions: &mut Sessions, channel: &TcpLayerChannel) {
         let receive_result = channel.1.try_recv();
         match receive_result {
             Ok((dst_ip, dst_port, src_ip, src_port, bytes)) => {
@@ -258,10 +224,10 @@ impl SessionManager {
                     let tcp_socket = session_data.tcp_socket();
                     if tcp_socket.can_send() {
                         tcp_socket.send_slice(&bytes[..]).unwrap();
-                        log::trace!("successfully sent incoming tcp layer data back to socket");
+                        log::trace!("successfully wrote tcp data to session socket");
                     } else {
                         log::error!(
-                            "failed to process incoming tcp layer data; cannot send back to socket, session={:?} count={:?} state={:?} capacity={:?} queue={:?}",
+                            "failed to process incoming tcp layer data; cannot write to session socket, session={:?} count={:?} state={:?} capacity={:?} queue={:?}",
                             session,
                             bytes.len(),
                             tcp_socket.state(),
@@ -278,8 +244,7 @@ impl SessionManager {
             }
             Err(error) => {
                 if error == TryRecvError::Empty {
-                    // wait for before trying again.
-                    std::thread::sleep(std::time::Duration::from_millis(500))
+                    // do nothing.
                 } else {
                     log::error!(
                         "failed to receive incoming tcp layer data, error={:?}",
@@ -288,48 +253,6 @@ impl SessionManager {
                 }
             }
         }
-    }
-
-    fn poll_tcp_layer_controls(sessions: &mut Sessions, channel: &TcpLayerControlChannel) {
-        let result = channel.1.try_recv();
-        match result {
-            Ok(control) => match control {
-                TcpLayerControl::SessionClosed(dst_ip, dst_port, src_ip, src_port) => {
-                    let session = Session {
-                        dst_ip: dst_ip,
-                        dst_port: dst_port,
-                        src_ip: src_ip,
-                        src_port: src_port,
-                        protocol: u8::from(IpProtocol::Tcp),
-                    };
-                    log::trace!("received control to close session, session={:?}", session);
-                    if let Some(session_data) = sessions.get_mut(&session) {
-                        let tcp_socket = session_data.tcp_socket();
-                        tcp_socket.abort();
-                    }
-                }
-            },
-            Err(error) => {
-                if error == TryRecvError::Empty {
-                    // do nothing.
-                } else {
-                    log::error!("failed to receive tcp control, error={:?}", error);
-                }
-            }
-        }
-    }
-
-    fn log_sessions(sessions: &mut Sessions) {
-        log::trace!("starting to log sessions");
-        for (index, (session, session_data)) in sessions.iter_mut().enumerate() {
-            log::trace!(
-                "session #{:?}: session={:?} state={:?}",
-                index,
-                session,
-                session_data.tcp_socket().state()
-            )
-        }
-        log::trace!("finished logging sessions");
     }
 
     pub fn stop(&mut self) {
