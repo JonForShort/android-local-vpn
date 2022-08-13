@@ -116,13 +116,12 @@ impl SessionData {
                         return true;
                     }
                 }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    // Ignore this error.
+                    return false;
+                }
                 Err(error) => {
-                    if error.kind() == ErrorKind::WouldBlock {
-                        // Ignore this error.
-                        return false;
-                    } else {
-                        log::error!("failed to check if session is closed, error={:?}", error);
-                    }
+                    log::error!("failed to check if session is closed, error={:?}", error);
                 }
             }
         }

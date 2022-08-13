@@ -24,12 +24,11 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::channel::IpLayerChannel;
-use super::packet_parser::PacketParser;
 use crate::smoltcp_ext::wire::log_packet;
-use crate::std_ext::fs::FileExt;
 use crate::vpn::channel::types::TryRecvError;
 use std::fs::File;
-use std::io::Write;
+use std::io::ErrorKind;
+use std::io::{Read, Write};
 use std::os::unix::io::FromRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -59,32 +58,32 @@ impl IpLayerProcessor {
         let channel = self.channel.clone();
         let mut file = unsafe { File::from_raw_fd(self.file_descriptor) };
         self.thread_join_handle = Some(std::thread::spawn(move || {
-            let mut packet_parser = PacketParser::new();
             while is_thread_running.load(Ordering::SeqCst) {
-                IpLayerProcessor::poll_outgoing_data(&mut packet_parser, &mut file, &channel);
+                IpLayerProcessor::poll_outgoing_data(&mut file, &channel);
                 IpLayerProcessor::poll_incoming_data(&mut file, &channel)
             }
             log::trace!("ip layer processor is stopping");
         }));
     }
 
-    fn poll_outgoing_data(packet_parser: &mut PacketParser, file: &mut File, channel: &IpLayerChannel) {
-        match file.read_all_bytes() {
-            Ok(mut bytes) => {
-                packet_parser.input_bytes(&mut bytes);
-                let packet_bytes = packet_parser.next_packet();
-                if let Some(bytes) = packet_bytes {
-                    log_packet("ip layer : outgoing", &bytes);
-                    let result = channel.0.send(bytes);
-                    match result {
-                        Ok(_) => {
-                            // nothing to do here.
-                        }
-                        Err(error) => {
-                            log::error!("failed to send outgoing data, error={:?}", error)
-                        }
+    fn poll_outgoing_data(file: &mut File, channel: &IpLayerChannel) {
+        let mut read_buffer: [u8; 65535] = [0; 65535];
+        match file.read(&mut read_buffer) {
+            Ok(read_count) => {
+                let bytes = read_buffer[..read_count].to_vec();
+                log_packet("ip layer : outgoing", &bytes);
+                let result = channel.0.send(bytes);
+                match result {
+                    Ok(_) => {
+                        // nothing to do here.
+                    }
+                    Err(error) => {
+                        log::error!("failed to send outgoing data, error={:?}", error)
                     }
                 }
+            }
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                // nothing to do here.
             }
             Err(error) => {
                 log::error!("failed to read from file descriptor, error={:?}", error);

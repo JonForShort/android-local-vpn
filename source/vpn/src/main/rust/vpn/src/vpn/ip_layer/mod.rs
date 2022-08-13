@@ -24,5 +24,4 @@
 // For more information, please refer to <https://unlicense.org>
 
 pub mod channel;
-mod packet_parser;
 pub mod processor;
