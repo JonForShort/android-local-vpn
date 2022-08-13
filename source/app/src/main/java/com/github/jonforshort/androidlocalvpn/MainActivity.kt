@@ -42,7 +42,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.MutableLiveData
@@ -163,6 +162,7 @@ private fun TestButton(text: String, url: String) {
 
     fun performJsoupRequest(onRequestStarted: () -> Unit, onRequestFinished: (Boolean) -> Unit) {
         coroutineScope.launch(Dispatchers.IO) {
+            val requestStartTime = System.currentTimeMillis()
             onRequestStarted()
             val conn = Jsoup
                 .connect(url)
@@ -171,9 +171,14 @@ private fun TestButton(text: String, url: String) {
             try {
                 val resp = conn.execute()
                 val html = resp.body()
-                d("dumping html, count=${html.length}")
-                d(html)
-                d("done dumping html")
+                val duration = System.currentTimeMillis() - requestStartTime
+
+                d(
+                    """dumping html, count=[${html.length}] duration=[$duration]
+                    |$html
+                    |done dumping html
+                """.trimMargin()
+                )
                 onRequestFinished(true)
             } catch (e: IOException) {
                 e(e)
