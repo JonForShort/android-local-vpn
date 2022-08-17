@@ -24,6 +24,9 @@ jobs:
       with:
         toolchain: stable
 
+    - name: Install Rust targets
+      run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
     - name: Set up Android NDK
       run: $ANDROID_SDK_ROOT/tools/bin/sdkmanager --install "ndk;21.1.6352462"
 
