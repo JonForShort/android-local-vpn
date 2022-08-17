@@ -1,3 +1,5 @@
+[![Build Master Branch](https://github.com/JonForShort/android-local-vpn/actions/workflows/build-master.yml/badge.svg)](https://github.com/JonForShort/android-local-vpn/actions/workflows/build-master.yml)
+
 # Android Local VPN
 
 This project is a simple local VPN for Android written in the Rust programming language.  It uses [smoltcp](https://github.com/smoltcp-rs/smoltcp) as its underlying network stack.
