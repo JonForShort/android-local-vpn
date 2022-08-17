@@ -2,7 +2,7 @@
 
 # Android Local VPN
 
-This project is a simple local VPN for Android written in the Rust programming language.  It uses [smoltcp](https://github.com/smoltcp-rs/smoltcp) as its underlying network stack.
+This project is a simple local VPN for Android written in the Rust programming language.  It uses [smoltcp](https://github.com/smoltcp-rs/smoltcp) for its TCP/IP stack.
 
 ## Contributions
 
