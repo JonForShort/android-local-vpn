@@ -1,0 +1,44 @@
+name: Create Release
+
+on:
+  release:
+    types: [ "created" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./source
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v3
+
+    - name: Set Up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Install Rust Targets
+      run: rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+
+    - name: Set Up Android NDK
+      run: $ANDROID_SDK_ROOT/tools/bin/sdkmanager --install "ndk;21.1.6352462"
+
+    - name: Set Up JDK 11
+      uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Build With Gradle
+      run: ./gradlew build
+      
+    - name: Publish Packages
+      run: ./gradlew :vpn:publish
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
