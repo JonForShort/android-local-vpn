@@ -1,11 +1,15 @@
-name: Create Release
+name: Release
 
 on: workflow_dispatch
 
 jobs:
-  build:
+  publish:
 
     runs-on: ubuntu-latest
+
+    permissions: 
+      contents: read
+      packages: write
 
     defaults:
       run:
