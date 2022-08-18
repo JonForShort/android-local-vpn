@@ -26,11 +26,8 @@
 //
 package com.github.jonforshort.androidlocalvpn
 
-import android.net.VpnService
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -46,9 +43,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.MutableLiveData
 import com.github.jonforshort.androidlocalvpn.ui.theme.AndroidLocalVpnTheme
+import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnActivity
 import com.github.jonforshort.androidlocalvpn.vpn.isVpnRunning
-import com.github.jonforshort.androidlocalvpn.vpn.startVpn
-import com.github.jonforshort.androidlocalvpn.vpn.stopVpn
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
 import com.google.accompanist.pager.pagerTabIndicatorOffset
@@ -61,17 +57,9 @@ import timber.log.Timber.d
 import timber.log.Timber.e
 import java.io.IOException
 
-class MainActivity : ComponentActivity() {
+class MainActivity : LocalVpnActivity() {
 
     private val vpnState = MutableLiveData(false)
-
-    private val vpnServicePreparedLauncher =
-        registerForActivityResult(StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK) {
-                startVpn(this)
-                vpnState.postValue(true)
-            }
-        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,20 +92,16 @@ class MainActivity : ComponentActivity() {
         vpnState.postValue(isVpnRunning(this))
     }
 
-    private fun onVpnStateChanged(vpnEnabled: Boolean) {
+    private fun onVpnStateChanged(vpnEnabled: Boolean) =
         if (vpnEnabled) {
-            val vpnIntent = VpnService.prepare(this)
-            if (vpnIntent == null) {
-                startVpn(this)
-                vpnState.postValue(true)
-            } else {
-                vpnServicePreparedLauncher.launch(vpnIntent)
-            }
+            startVpn()
         } else {
-            stopVpn(this)
-            vpnState.postValue(false)
+            stopVpn()
         }
-    }
+
+    override fun onVpnStarted() = vpnState.postValue(true)
+
+    override fun onVpnStopped() = vpnState.postValue(false)
 }
 
 @Composable

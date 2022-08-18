@@ -31,7 +31,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
-import timber.log.Timber.d
 import timber.log.Timber.e
 import java.io.IOException
 import java.net.NetworkInterface
@@ -92,7 +91,7 @@ class LocalVpnService : VpnService() {
         try {
             vpnInterface.close()
         } catch (e: IOException) {
-            e(e, "unable to close parcel file descriptor")
+            e(e, "failed to close parcel file descriptor")
         }
         onStopVpn()
         stopForeground(true)
@@ -101,15 +100,12 @@ class LocalVpnService : VpnService() {
 
     override fun onCreate() {
         super.onCreate()
-        d("onCreate called")
         setUpVpnInterface()
         onCreateNative(this)
         onStartVpn(vpnInterface.detachFd())
     }
 
     private fun setUpVpnInterface() {
-        d("setting up vpn interface")
-
         val vpnServiceBuilder = super.Builder()
         vpnServiceBuilder.addAddress(VPN_ADDRESS, 32)
         vpnServiceBuilder.addRoute(VPN_ROUTE, 0)
@@ -122,7 +118,6 @@ class LocalVpnService : VpnService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        d("onDestroy called")
         onDestroyNative()
     }
 
