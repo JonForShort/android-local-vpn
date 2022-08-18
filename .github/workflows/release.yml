@@ -1,6 +1,8 @@
-name: Release
+name: Create Release
 
-on: workflow_dispatch
+on:
+  release:
+    types: [created]
 
 jobs:
   publish:
