@@ -5,6 +5,6 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "AndroidLocalVpn"
+rootProject.name = "com.github.jonforshort"
 include ':app'
 include ':vpn'
