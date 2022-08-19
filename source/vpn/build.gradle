@@ -15,6 +15,15 @@ plugins {
     id 'maven-publish'
 }
 
+ext {
+    groupId = "com.github.jonforshort"
+    artifactId = "android-local-vpn"
+    versionCode = 1
+    versionName = "0.1.0"
+    libraryName = "AndroidLocalVpn"
+    libraryDescription = "Local VPN For Android"
+}
+
 android {
     compileSdk 32
     ndkVersion "21.1.6352462"
@@ -65,14 +74,30 @@ tasks.whenTaskAdded { task ->
     }
 }
 
-publishing {
-    repositories {
-        maven {
-            name = "GitHubPackages"
-            url = "https://maven.pkg.github.com/jonforshort/android-local-vpn"
-            credentials {
-                username = System.getenv("GITHUB_ACTOR")
-                password = System.getenv("GITHUB_TOKEN")
+afterEvaluate {
+    publishing {
+        publications {
+            maven(MavenPublication) {
+                groupId groupId
+                artifactId artifactId
+                version versionName
+
+                from components.release
+
+                pom {
+                    name = libraryName
+                    description = libraryDescription
+                }
+            }
+        }
+        repositories {
+            maven {
+                name = "GitHubPackages"
+                url = "https://maven.pkg.github.com/jonforshort/android-local-vpn"
+                credentials {
+                    username = System.getenv("GITHUB_ACTOR")
+                    password = System.getenv("GITHUB_TOKEN")
+                }
             }
         }
     }
