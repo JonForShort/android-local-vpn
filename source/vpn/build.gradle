@@ -87,6 +87,8 @@ afterEvaluate {
                 pom {
                     name = libraryName
                     description = libraryDescription
+                    group = groupId
+                    version = versionName
                 }
             }
         }
