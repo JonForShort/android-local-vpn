@@ -78,9 +78,9 @@ afterEvaluate {
     publishing {
         publications {
             maven(MavenPublication) {
-                groupId groupId
-                artifactId artifactId
-                version versionName
+                groupId = groupId
+                artifactId = artifactId
+                version = versionName
 
                 from components.release
 
