@@ -18,7 +18,8 @@ plugins {
 ext {
     groupId = "com.github.jonforshort"
     artifactId = "android-local-vpn"
-    version = "0.1.0"
+    versionCode = 1
+    versionName = "0.1." + versionCode
     libraryName = "AndroidLocalVpn"
     libraryDescription = "Local VPN For Android"
 }
@@ -30,6 +31,9 @@ android {
     defaultConfig {
         minSdk 26
         targetSdk 32
+
+        versionCode = versionCode
+        versionName = versionName
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
@@ -79,7 +83,7 @@ afterEvaluate {
             maven(MavenPublication) {
                 groupId = groupId
                 artifactId = artifactId
-                version = version
+                version = versionName
 
                 from components.release
 
