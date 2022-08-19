@@ -18,8 +18,7 @@ plugins {
 ext {
     groupId = "com.github.jonforshort"
     artifactId = "android-local-vpn"
-    versionCode = 1
-    versionName = "0.1.0"
+    version = "0.1.0"
     libraryName = "AndroidLocalVpn"
     libraryDescription = "Local VPN For Android"
 }
@@ -80,15 +79,13 @@ afterEvaluate {
             maven(MavenPublication) {
                 groupId = groupId
                 artifactId = artifactId
-                version = versionName
+                version = version
 
                 from components.release
 
                 pom {
                     name = libraryName
                     description = libraryDescription
-                    group = groupId
-                    version = versionName
                 }
             }
         }
