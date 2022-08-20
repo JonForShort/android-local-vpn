@@ -74,7 +74,7 @@ cargo {
     module = "src/main/rust/vpn"
     libname = "vpn"
     targets = ["arm64", "arm", "x86_64", "x86"]
-    profile = rootProject.isProductionBuild() ? "release" : "build"
+    profile = rootProject.isProductionBuild() ? "release" : "debug"
 }
 
 tasks.whenTaskAdded { task ->
