@@ -32,8 +32,8 @@ use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub struct VpnDevice {
-    pub rx_queue: VecDeque<Vec<u8>>,
-    pub tx_queue: VecDeque<Vec<u8>>,
+    rx_queue: VecDeque<Vec<u8>>,
+    tx_queue: VecDeque<Vec<u8>>,
 }
 
 impl<'a> VpnDevice {
@@ -42,6 +42,14 @@ impl<'a> VpnDevice {
             rx_queue: VecDeque::new(),
             tx_queue: VecDeque::new(),
         }
+    }
+
+    pub fn receive(&mut self, bytes: Vec<u8>) {
+        self.rx_queue.push_back(bytes);
+    }
+
+    pub fn transmit(&mut self) -> Option<Vec<u8>> {
+        return self.tx_queue.pop_front();
     }
 }
 

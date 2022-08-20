@@ -119,19 +119,11 @@ impl SessionManager {
 
     fn process_sent_tcp_data(session_data: &mut SessionData<VpnDevice>, channel: &IpLayerChannel) {
         let device = session_data.interface().device_mut();
-        for bytes in device.tx_queue.pop_front() {
+        for bytes in device.transmit() {
             log_packet("session manager : to ip layer", &bytes);
-            let result = channel.0.send(bytes.clone());
-            match result {
-                Ok(_) => {
-                    log::trace!(
-                        "successfully sent bytes to ip layer, count={:?}",
-                        bytes.len()
-                    );
-                }
-                Err(error) => {
-                    log::error!("failed to send bytes to ip layer, error=[{:?}]", error);
-                }
+            let result = channel.0.send(bytes);
+            if let Err(error) = result {
+                log::error!("failed to send bytes to ip layer, error=[{:?}]", error);
             }
         }
     }
@@ -153,7 +145,7 @@ impl SessionManager {
                     };
                     if let Some(session_data) = sessions.get_mut(&session) {
                         let interface = session_data.interface();
-                        interface.device_mut().rx_queue.push_back(bytes);
+                        interface.device_mut().receive(bytes);
                     } else {
                         log::error!("unable to find session; session is expected to be created.")
                     }
@@ -179,8 +171,8 @@ impl SessionManager {
                 if ip_packet.protocol() == IpProtocol::Tcp {
                     let payload = ip_packet.payload();
                     let tcp_packet = TcpPacket::new_checked(payload).unwrap();
-                    let src_ip_bytes = ip_packet.src_addr().as_bytes().clone().try_into().unwrap();
-                    let dst_ip_bytes = ip_packet.dst_addr().as_bytes().clone().try_into().unwrap();
+                    let src_ip_bytes = ip_packet.src_addr().as_bytes().try_into().unwrap();
+                    let dst_ip_bytes = ip_packet.dst_addr().as_bytes().try_into().unwrap();
                     return Some(Session {
                         src_ip: src_ip_bytes,
                         src_port: tcp_packet.src_port(),
