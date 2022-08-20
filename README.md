@@ -4,6 +4,16 @@
 
 This project is a simple local VPN for Android written in the Rust programming language.  It uses [smoltcp](https://github.com/smoltcp-rs/smoltcp) for its TCP/IP stack.
 
+## Goals
+
+* Performant - Performance running local VPN should be comparable to performance without running VPN.
+* Small - Library should be less than 1 MB in size.
+* Easy To Use - Integration should be simple.
+
+## Integration
+
+TBD
+
 ## Contributions
 
 All contributions are welcome.  Please feel free to raise an issue if you have any questions or feature requests.
