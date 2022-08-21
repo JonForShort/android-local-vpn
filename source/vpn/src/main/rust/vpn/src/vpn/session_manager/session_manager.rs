@@ -73,6 +73,7 @@ impl SessionManager {
                 SessionManager::process_outgoing_ip_layer_data(&mut sessions, &ip_layer_channel);
                 SessionManager::process_incoming_tcp_layer_data(&mut sessions, &tcp_layer_channel);
                 SessionManager::poll_sessions(&mut sessions, &ip_layer_channel, &tcp_layer_channel);
+                SessionManager::clean_up_sessions(&mut sessions);
             }
             log::trace!("session manager is stopping");
         }));
@@ -89,30 +90,23 @@ impl SessionManager {
 
     fn process_received_tcp_data(session: &Session, session_data: &mut SessionData<VpnDevice>, channel: &TcpLayerChannel) {
         let tcp_socket = session_data.tcp_socket();
-        if tcp_socket.may_recv() {
-            let result = session_data.tcp_socket().recv(|buffer| {
-                if !buffer.is_empty() {
-                    let tcp_data = (
-                        session.dst_ip,
-                        session.dst_port,
-                        session.src_ip,
-                        session.src_port,
-                        buffer.to_vec(),
-                    );
-                    let result = channel.0.send(tcp_data);
-                    match result {
-                        Ok(_) => {
-                            log::trace!("sent buffer to tcp layer, count={:?}", buffer.len(),);
-                        }
-                        Err(error) => {
-                            log::error!("failed to send buffer to tcp layer, error={:?}", error);
-                        }
-                    }
+        while tcp_socket.can_recv() {
+            let result = tcp_socket.recv(|buffer| {
+                let tcp_data = (
+                    session.dst_ip,
+                    session.dst_port,
+                    session.src_ip,
+                    session.src_port,
+                    buffer.to_vec(),
+                );
+                if let Err(error) = channel.0.send(tcp_data) {
+                    log::error!("failed to send buffer to tcp layer, error={:?}", error);
                 }
                 (buffer.len(), buffer)
             });
             if let Err(error) = result {
-                log::error!("failed to receive from tcp socket, error={:?}", error)
+                log::error!("failed to receive from tcp socket, error={:?}", error);
+                break;
             }
         }
     }
@@ -216,7 +210,6 @@ impl SessionManager {
                     let tcp_socket = session_data.tcp_socket();
                     if tcp_socket.can_send() {
                         tcp_socket.send_slice(&bytes[..]).unwrap();
-                        log::trace!("successfully wrote tcp data to session socket");
                     } else {
                         log::error!(
                             "failed to process incoming tcp layer data; cannot write to session socket, session={:?} count={:?} state={:?} capacity={:?} queue={:?}",
@@ -245,6 +238,20 @@ impl SessionManager {
                 }
             }
         }
+    }
+
+    fn clean_up_sessions(sessions: &mut Sessions) {
+        sessions.retain(
+            |session, session_data| match session_data.tcp_socket().state() {
+                smoltcp::socket::TcpState::CloseWait => {
+                    log::trace!("removing closed session, session=[{:?}]", session);
+                    return false;
+                }
+                _ => {
+                    return true;
+                }
+            },
+        );
     }
 
     pub fn stop(&mut self) {
