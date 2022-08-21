@@ -24,7 +24,7 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::session::Session;
-use smoltcp::iface::{Context, Interface, InterfaceBuilder, Routes, SocketHandle};
+use smoltcp::iface::{Interface, InterfaceBuilder, Routes, SocketHandle};
 use smoltcp::phy::Device;
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::wire::IpEndpoint;
@@ -44,17 +44,20 @@ where
     DeviceT: for<'d> Device<'d>,
 {
     pub fn new(session: &Session, device: DeviceT) -> SessionData<'a, DeviceT> {
+        let mut socket = create_socket();
+        set_up_socket(session, &mut socket);
+
         let mut interface = InterfaceBuilder::new(device, vec![])
             .any_ip(true)
-            .ip_addrs([IpCidr::new(IpAddress::v4(10, 0, 0, 2), 8)])
+            .ip_addrs([IpCidr::new(IpAddress::v4(0, 0, 0, 1), 0)])
             .routes(create_routes())
             .finalize();
-        let socket_handle = interface.add_socket(create_tcp_socket());
-        let (socket, context) = interface.get_socket_and_context::<TcpSocket<'a>>(socket_handle);
-        connect_session(session, socket, context);
+
+        let socket_handle = interface.add_socket(socket);
+
         SessionData {
-            interface: interface,
-            socket_handle: socket_handle,
+            interface,
+            socket_handle,
         }
     }
 
@@ -71,24 +74,23 @@ where
 
 fn create_routes<'a>() -> Routes<'a> {
     let mut routes = Routes::new(BTreeMap::new());
-    let default_gateway_ipv4 = Ipv4Address::new(10, 0, 0, 2);
+    let default_gateway_ipv4 = Ipv4Address::new(0, 0, 0, 1);
     routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
     return routes;
 }
 
-fn create_tcp_socket<'a>() -> TcpSocket<'a> {
+fn create_socket<'a>() -> TcpSocket<'a> {
     let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 1048576]);
     let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 1048576]);
     return TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 }
 
-fn connect_session(session: &Session, socket: &mut TcpSocket, context: &mut Context) {
-    let src_ip = Ipv4Address::from_bytes(&session.src_ip);
+fn set_up_socket(session: &Session, socket: &mut TcpSocket) {
     let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
-    let src_endpoint = IpEndpoint::new(IpAddress::from(src_ip), session.src_port);
     let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
-    let connect_result = socket.connect(context, src_endpoint, dst_endpoint);
-    if let Err(_) = connect_result {
-        log::error!("failed to connect to session, session=[{}]", session);
+    if let Err(_) = socket.listen(dst_endpoint) {
+        log::error!("failed to listen for session, session=[{}]", session);
     }
+
+    socket.set_ack_delay(None);
 }
