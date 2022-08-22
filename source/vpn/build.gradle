@@ -51,16 +51,6 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
-
-    if (rootProject.isProductionBuild()) {
-        println("Native debug symbols are not included in build")
-    } else {
-        packagingOptions {
-            jniLibs {
-                keepDebugSymbols += ['**/*.so']
-            }
-        }
-    }
 }
 
 dependencies {
@@ -74,7 +64,6 @@ cargo {
     module = "src/main/rust/vpn"
     libname = "vpn"
     targets = ["arm64", "arm", "x86_64", "x86"]
-    profile = rootProject.isProductionBuild() ? "release" : "debug"
 }
 
 tasks.whenTaskAdded { task ->

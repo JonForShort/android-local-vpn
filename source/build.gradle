@@ -1,13 +1,6 @@
 buildscript {
     ext {
         kotlin_version = '1.7.10'
-
-        isProductionBuild = {
-            var isProductionBuild = System.getenv('PRODUCTION_BUILD')
-            var result = Boolean.valueOf(isProductionBuild)
-            println("[PRODUCTION_BUILD] = $result")
-            return result
-        }
     }
     repositories {
         google()
