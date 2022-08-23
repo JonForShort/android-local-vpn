@@ -34,6 +34,7 @@ use crate::vpn::tcp_layer::channel::TcpLayerChannel;
 use crate::vpn::vpn_device::VpnDevice;
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
+use smoltcp::Error;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -82,9 +83,20 @@ impl SessionManager {
     fn poll_sessions(sessions: &mut Sessions, ip_layer_channel: &IpLayerChannel, tcp_layer_channel: &TcpLayerChannel) {
         for (session, session_data) in sessions.iter_mut() {
             let interface = session_data.interface();
-            interface.poll(Instant::now()).unwrap();
-            SessionManager::process_received_tcp_data(session, session_data, tcp_layer_channel);
-            SessionManager::process_sent_tcp_data(session_data, ip_layer_channel);
+            match interface.poll(Instant::now()) {
+                Ok(has_readiness_changed) => {
+                    if has_readiness_changed {
+                        SessionManager::process_received_tcp_data(session, session_data, tcp_layer_channel);
+                        SessionManager::process_sent_tcp_data(session_data, ip_layer_channel);
+                    }
+                }
+                Err(error) if error == Error::Unrecognized => {
+                    // nothing to do.
+                }
+                Err(error) => {
+                    log::error!("received error when polling interfaces, errro={:?}", error);
+                }
+            }
         }
     }
 
