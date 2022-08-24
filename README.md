@@ -7,8 +7,14 @@ This project is a simple [VPN](https://developer.android.com/guide/topics/connec
 ## Goals
 
 * Performant - Performance running local VPN should be comparable to performance without running VPN.
-* Small - Library should be less than 1 MB in size.
+* Small - Library should be less than 2 MB per architecture type.
 * Easy To Use - Integration should be simple.
+
+## Planned Features
+
+* Support for protocols IPv4, IPv6, TCP and UDP.
+* Allow for monitoring all traffic.
+* Allow for blocking traffic by IP address, port number and application.
 
 ## Integration
 
