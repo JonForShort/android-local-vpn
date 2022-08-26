@@ -57,7 +57,7 @@ impl SocketProtector {
         let mut socket_protector = SOCKET_PROTECTOR.lock().unwrap();
         let java_vm = Arc::new(env.get_java_vm().unwrap());
         *socket_protector = Some(SocketProtector {
-            java_vm: java_vm,
+            java_vm,
             object: env.new_global_ref(object).unwrap(),
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
@@ -78,12 +78,7 @@ impl SocketProtector {
             if let Some(method_id) = SocketProtector::create_protect_jni_method_id(jni_env) {
                 log::trace!("successfully created protect jni method ID");
                 while is_thread_running.load(Ordering::SeqCst) {
-                    SocketProtector::handle_protect_socket_request(
-                        &receiver_channel,
-                        jni_env,
-                        object.as_obj(),
-                        method_id,
-                    )
+                    SocketProtector::handle_protect_socket_request(&receiver_channel, jni_env, object.as_obj(), method_id)
                 }
             }
             log::trace!("socket protecting thread is stopping");
@@ -91,12 +86,7 @@ impl SocketProtector {
         log::trace!("successfully started socket protecting thread");
     }
 
-    fn handle_protect_socket_request(
-        receiver: &ReceiverChannel,
-        jni_env: JNIEnv,
-        vpn_service_object: JObject,
-        protect_method_id: JMethodID,
-    ) {
+    fn handle_protect_socket_request(receiver: &ReceiverChannel, jni_env: JNIEnv, vpn_service_object: JObject, protect_method_id: JMethodID) {
         let (socket, reply_sender) = receiver.recv().unwrap();
         log::trace!("handling protect socket request, socket={:?}", socket);
         if socket <= 0 {
@@ -137,7 +127,7 @@ impl SocketProtector {
                 return Some(method_id);
             }
         }
-        return None;
+        None
     }
 
     pub fn release() {
@@ -181,6 +171,6 @@ impl SocketProtector {
                 );
             }
         }
-        return false;
+        false
     }
 }

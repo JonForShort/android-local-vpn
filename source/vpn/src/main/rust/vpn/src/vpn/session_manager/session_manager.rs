@@ -53,8 +53,8 @@ pub struct SessionManager {
 impl SessionManager {
     pub fn new(ip_layer_channel: IpLayerChannel, tcp_layer_channel: TcpLayerChannel) -> SessionManager {
         SessionManager {
-            ip_layer_channel: ip_layer_channel,
-            tcp_layer_channel: tcp_layer_channel,
+            ip_layer_channel,
+            tcp_layer_channel,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
         }
@@ -125,7 +125,7 @@ impl SessionManager {
 
     fn process_sent_tcp_data(session_data: &mut SessionData<VpnDevice>, channel: &IpLayerChannel) {
         let device = session_data.interface().device_mut();
-        for bytes in device.transmit() {
+        if let Some(bytes) = device.transmit() {
             log_packet("session manager : to ip layer", &bytes);
             let result = channel.0.send(bytes);
             if let Err(error) = result {
@@ -196,7 +196,7 @@ impl SessionManager {
                 );
             }
         }
-        return None;
+        None
     }
 
     fn process_incoming_tcp_layer_data(sessions: &mut Sessions, channel: &TcpLayerChannel) {
@@ -212,10 +212,10 @@ impl SessionManager {
                     src_port
                 );
                 let session = Session {
-                    dst_ip: dst_ip,
-                    dst_port: dst_port,
-                    src_ip: src_ip,
-                    src_port: src_port,
+                    dst_ip,
+                    dst_port,
+                    src_ip,
+                    src_port,
                     protocol: u8::from(IpProtocol::Tcp),
                 };
                 if let Some(session_data) = sessions.get_mut(&session) {
@@ -257,11 +257,9 @@ impl SessionManager {
             |session, session_data| match session_data.tcp_socket().state() {
                 smoltcp::socket::TcpState::CloseWait => {
                     log::trace!("removing closed session, session=[{:?}]", session);
-                    return false;
+                    false
                 }
-                _ => {
-                    return true;
-                }
+                _ => true,
             },
         );
     }

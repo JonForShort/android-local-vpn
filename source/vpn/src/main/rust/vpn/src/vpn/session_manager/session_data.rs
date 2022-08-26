@@ -62,13 +62,13 @@ where
     }
 
     pub fn interface(&mut self) -> &mut Interface<'a, DeviceT> {
-        return &mut self.interface;
+        &mut self.interface
     }
 
     pub fn tcp_socket(&mut self) -> &mut TcpSocket<'a> {
         let socket_handle = self.socket_handle;
         let interface = self.interface();
-        return interface.get_socket::<TcpSocket<'a>>(socket_handle);
+        interface.get_socket::<TcpSocket<'a>>(socket_handle)
     }
 }
 
@@ -76,19 +76,19 @@ fn create_routes<'a>() -> Routes<'a> {
     let mut routes = Routes::new(BTreeMap::new());
     let default_gateway_ipv4 = Ipv4Address::new(0, 0, 0, 1);
     routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
-    return routes;
+    routes
 }
 
 fn create_socket<'a>() -> TcpSocket<'a> {
     let tcp_rx_buffer = TcpSocketBuffer::new(vec![0; 1048576]);
     let tcp_tx_buffer = TcpSocketBuffer::new(vec![0; 1048576]);
-    return TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
+    TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer)
 }
 
 fn set_up_socket(session: &Session, socket: &mut TcpSocket) {
     let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
     let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
-    if let Err(_) = socket.listen(dst_endpoint) {
+    if socket.listen(dst_endpoint).is_err() {
         log::error!("failed to listen for session, session=[{}]", session);
     }
 

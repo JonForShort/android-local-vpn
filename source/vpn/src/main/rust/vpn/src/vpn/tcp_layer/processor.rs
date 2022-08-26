@@ -78,10 +78,10 @@ impl TcpLayerProcessor {
                     src_port
                 );
                 let session = TcpSession {
-                    dst_ip: dst_ip,
-                    dst_port: dst_port,
-                    src_ip: src_ip,
-                    src_port: src_port,
+                    dst_ip,
+                    dst_port,
+                    src_ip,
+                    src_port,
                 };
                 if sessions.contains_key(&session) {
                     log::trace!("tcp session already exists, session=[{:?}]", session);

@@ -49,7 +49,7 @@ impl<'a> VpnDevice {
     }
 
     pub fn transmit(&mut self) -> Option<Vec<u8>> {
-        return self.tx_queue.pop_front();
+        self.tx_queue.pop_front()
     }
 }
 
@@ -61,7 +61,7 @@ impl<'a> Device<'a> for VpnDevice {
         let mut default = DeviceCapabilities::default();
         default.max_transmission_unit = 65535;
         default.medium = Medium::Ip;
-        return default;
+        default
     }
 
     fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {

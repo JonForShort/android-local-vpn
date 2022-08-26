@@ -57,10 +57,10 @@ impl Vpn {
         );
 
         Self {
-            file_descriptor: file_descriptor,
-            ip_layer_processor: ip_layer_processor,
-            tcp_layer_processor: tcp_layer_processor,
-            session_manager: session_manager,
+            file_descriptor,
+            ip_layer_processor,
+            tcp_layer_processor,
+            session_manager,
         }
     }
 

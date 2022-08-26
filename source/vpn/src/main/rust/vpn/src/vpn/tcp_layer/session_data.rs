@@ -99,24 +99,19 @@ impl SessionData {
     pub fn is_data_available(&mut self) -> bool {
         let timeout = Some(std::time::Duration::from_millis(0));
         let result = self.poll.poll(&mut self.events, timeout);
-        if let Ok(_) = result {
-            return self.events.iter().count() > 0;
+        if result.is_ok() {
+            self.events.iter().count() > 0
         } else {
-            return false;
-        };
+            false
+        }
     }
 
-    pub fn send_data(&mut self, bytes: &Vec<u8>) -> Result<usize> {
-        let bytes_as_array = &bytes[..];
-        let result = self.socket.as_ref().unwrap().send(bytes_as_array);
+    pub fn send_data(&mut self, bytes: &[u8]) -> Result<usize> {
+        let result = self.socket.as_ref().unwrap().send(bytes);
         if let Ok(size) = result {
-            log::trace!(
-                "sent data to socket, size={:?}, data={:?}",
-                size,
-                bytes_as_array
-            );
+            log::trace!("sent data to socket, size={:?}, data={:?}", size, bytes);
         }
-        return result;
+        result
     }
 
     pub fn read_data(&mut self) -> Result<Vec<u8>> {
@@ -142,6 +137,6 @@ impl SessionData {
                 }
             }
         }
-        return Ok(bytes);
+        Ok(bytes)
     }
 }
