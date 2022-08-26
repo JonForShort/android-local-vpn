@@ -22,3 +22,11 @@
 // OTHER DEALINGS IN THE SOFTWARE.
 //
 // For more information, please refer to <https://unlicense.org>
+
+pub mod jni;
+
+macro_rules! jni {
+    () => {
+        crate::utils::jni::JNI.lock().unwrap().as_mut().unwrap()
+    };
+}

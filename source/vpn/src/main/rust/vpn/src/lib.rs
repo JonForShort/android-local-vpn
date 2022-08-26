@@ -48,6 +48,7 @@ pub mod android {
     use self::jni::JNIEnv;
 
     use crate::socket_protector::socket_protector::SocketProtector;
+    use crate::utils::jni::Jni;
     use crate::vpn::vpn::Vpn;
     use android_logger::Config;
     use std::process;
@@ -64,11 +65,7 @@ pub mod android {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(
-        env: JNIEnv,
-        class: JClass,
-        object: JObject,
-    ) {
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(env: JNIEnv, class: JClass, object: JObject) {
         android_logger::init_once(
             Config::default()
                 .with_tag("nativeVpn")
@@ -76,25 +73,20 @@ pub mod android {
         );
         log::trace!("onCreateNative");
         set_panic_handler();
-        SocketProtector::init(env, class, object);
+        Jni::init(env, class, object);
+        SocketProtector::init();
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onDestroyNative(
-        _: JNIEnv,
-        _: JClass,
-    ) {
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onDestroyNative(_: JNIEnv, _: JClass) {
         log::trace!("onDestroyNative");
         SocketProtector::release();
+        Jni::release();
         remove_panic_handler();
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(
-        _: JNIEnv,
-        _: JClass,
-        file_descriptor: i32,
-    ) {
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(_: JNIEnv, _: JClass, file_descriptor: i32) {
         log::trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
         update_vpn(file_descriptor);
         socket_protector!().start();
@@ -102,10 +94,7 @@ pub mod android {
     }
 
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStopVpn(
-        _: JNIEnv,
-        _: JClass,
-    ) {
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStopVpn(_: JNIEnv, _: JClass) {
         log::trace!("onStopVpn, pid={}", process::id());
         vpn!().stop();
         socket_protector!().stop();
