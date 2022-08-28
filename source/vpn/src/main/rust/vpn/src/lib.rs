@@ -23,8 +23,6 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-mod std_ext;
-
 mod smoltcp_ext;
 
 #[macro_use]
