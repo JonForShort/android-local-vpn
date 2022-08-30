@@ -7,10 +7,29 @@ on:
     branches: [ "master" ]
 
 jobs:
-  build:
-
+  build-host:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./source/host
 
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v3
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Install Rust targets
+      run: rustup target add x86_64-unknown-linux-gnu
+
+    - name: Build
+      run: cargo build --target x86_64-unknown-linux-gnu
+
+  build-android:
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./source/android

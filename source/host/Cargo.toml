@@ -1,0 +1,11 @@
+[package]
+edition = "2021"
+name = "main"
+version = "0.1.0"
+
+[dependencies]
+clap = "3.2.18"
+env_logger = "0.9.0"
+libc = "0.2.131"
+smoltcp = "0.8.1"
+core = {path = "../core"}
