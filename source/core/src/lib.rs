@@ -23,11 +23,11 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-mod smoltcp_ext;
-mod vpn;
-
 #[macro_use]
 extern crate lazy_static;
+
+mod smoltcp_ext;
+mod vpn;
 
 pub mod tun {
 
@@ -36,14 +36,9 @@ pub mod tun {
     use crate::vpn::vpn::Vpn;
     use std::process;
     use std::sync::Mutex;
-    use std::sync::RwLock;
 
     lazy_static! {
         static ref VPN: Mutex<Option<Vpn>> = Mutex::new(None);
-    }
-
-    lazy_static! {
-        static ref CALLBACK: RwLock<Option<fn(i32)>> = RwLock::new(None);
     }
 
     macro_rules! vpn {
@@ -71,6 +66,20 @@ pub mod tun {
         vpn!().stop();
     }
 
+    fn update_vpn(file_descriptor: i32) {
+        let mut vpn = VPN.lock().unwrap();
+        *vpn = Some(Vpn::new(file_descriptor));
+    }
+}
+
+pub mod tun_callbacks {
+
+    use std::sync::RwLock;
+
+    lazy_static! {
+        static ref CALLBACK: RwLock<Option<fn(i32)>> = RwLock::new(None);
+    }
+
     pub fn set_socket_created_callback(new_callback: Option<fn(i32)>) {
         let mut callback = CALLBACK.write().unwrap();
         *callback = new_callback;
@@ -81,10 +90,5 @@ pub mod tun {
         if let Some(on_socket_created_callback) = *callback {
             on_socket_created_callback(socket);
         }
-    }
-
-    fn update_vpn(file_descriptor: i32) {
-        let mut vpn = VPN.lock().unwrap();
-        *vpn = Some(Vpn::new(file_descriptor));
     }
 }

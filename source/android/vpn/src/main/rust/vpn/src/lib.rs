@@ -45,8 +45,9 @@ pub mod android {
     use crate::utils::jni::Jni;
 
     use android_logger::Config;
+    use core::tun;
+    use core::tun_callbacks;
     use std::process;
-    use tun::tun;
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(env: JNIEnv, class: JClass, object: JObject) {
@@ -75,16 +76,16 @@ pub mod android {
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(_: JNIEnv, _: JClass, file_descriptor: i32) {
         log::trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
         socket_protector!().start();
-        tun::set_socket_created_callback(Some(on_socket_created));
+        tun_callbacks::set_socket_created_callback(Some(on_socket_created));
         tun::start(file_descriptor);
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStopVpn(_: JNIEnv, _: JClass) {
         log::trace!("onStopVpn, pid={}", process::id());
-        socket_protector!().stop();
         tun::stop();
-        tun::set_socket_created_callback(None);
+        socket_protector!().stop();
+        tun_callbacks::set_socket_created_callback(None);
     }
 
     fn set_panic_handler() {
