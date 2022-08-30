@@ -23,6 +23,7 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
+use crate::tun::on_socket_created;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
@@ -51,7 +52,7 @@ impl SessionData {
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
         let raw_fd = socket.as_raw_fd();
-        let is_socket_protected = socket_protector!().protect_socket(raw_fd);
+        let is_socket_protected = on_socket_created(raw_fd);
         log::trace!(
             "finished protecting socket, is_socket_protected={:?}",
             is_socket_protected

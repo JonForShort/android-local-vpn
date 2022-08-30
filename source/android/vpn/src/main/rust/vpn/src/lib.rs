@@ -23,15 +23,11 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-mod smoltcp_ext;
-
 #[macro_use]
 mod utils;
 
 #[macro_use]
 mod socket_protector;
-
-mod vpn;
 
 #[macro_use]
 extern crate lazy_static;
@@ -47,20 +43,10 @@ pub mod android {
 
     use crate::socket_protector::socket_protector::SocketProtector;
     use crate::utils::jni::Jni;
-    use crate::vpn::vpn::Vpn;
+
     use android_logger::Config;
     use std::process;
-    use std::sync::Mutex;
-
-    lazy_static! {
-        static ref VPN: Mutex<Option<Vpn>> = Mutex::new(None);
-    }
-
-    macro_rules! vpn {
-        () => {
-            VPN.lock().unwrap().as_mut().unwrap()
-        };
-    }
+    use tun::tun;
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(env: JNIEnv, class: JClass, object: JObject) {
@@ -73,11 +59,13 @@ pub mod android {
         set_panic_handler();
         Jni::init(env, class, object);
         SocketProtector::init();
+        tun::create();
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onDestroyNative(_: JNIEnv, _: JClass) {
         log::trace!("onDestroyNative");
+        tun::destroy();
         SocketProtector::release();
         Jni::release();
         remove_panic_handler();
@@ -86,21 +74,17 @@ pub mod android {
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(_: JNIEnv, _: JClass, file_descriptor: i32) {
         log::trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
-        update_vpn(file_descriptor);
         socket_protector!().start();
-        vpn!().start();
+        tun::set_socket_created_callback(Some(on_socket_created));
+        tun::start(file_descriptor);
     }
 
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStopVpn(_: JNIEnv, _: JClass) {
         log::trace!("onStopVpn, pid={}", process::id());
-        vpn!().stop();
         socket_protector!().stop();
-    }
-
-    fn update_vpn(file_descriptor: i32) {
-        let mut vpn = VPN.lock().unwrap();
-        *vpn = Some(Vpn::new(file_descriptor));
+        tun::stop();
+        tun::set_socket_created_callback(None);
     }
 
     fn set_panic_handler() {
@@ -111,5 +95,9 @@ pub mod android {
 
     fn remove_panic_handler() {
         let _ = std::panic::take_hook();
+    }
+
+    fn on_socket_created(socket: i32) {
+        socket_protector!().protect_socket(socket);
     }
 }

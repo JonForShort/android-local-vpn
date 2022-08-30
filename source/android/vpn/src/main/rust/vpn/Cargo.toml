@@ -13,6 +13,4 @@ jni = {version = "0.19.0", default-features = false}
 lazy_static = "1.4.0"
 libc = "0.2.131"
 log = "0.4.17"
-mio = {version = "0.8.2", features = ["os-poll", "net", "os-ext"]}
-smoltcp = "0.8.1"
-socket2 = "0.4.4"
+tun = {path = "../../../../../../lib"}
