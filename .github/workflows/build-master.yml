@@ -13,7 +13,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: ./source
+        working-directory: ./source/android
 
     steps:
     - name: Checkout source code
