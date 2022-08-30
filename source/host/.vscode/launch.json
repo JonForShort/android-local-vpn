@@ -1,0 +1,24 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Launch",
+            "cargo": {
+                "args": [
+                    "build",
+                ]
+            },
+            "cwd": "${workspaceRoot}",
+            "program": "${cargo:program}",
+            "args": [
+                "--tun",
+                "tun0"
+            ],
+            "env": {
+                "RUST_LOG": "trace"
+            }
+        }
+    ]
+}
