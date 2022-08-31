@@ -14,7 +14,9 @@
             "program": "${cargo:program}",
             "args": [
                 "--tun",
-                "tun0"
+                "tun0",
+                "--out",
+                "eth0"
             ],
             "env": {
                 "RUST_LOG": "trace"

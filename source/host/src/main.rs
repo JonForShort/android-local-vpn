@@ -24,9 +24,14 @@
 // For more information, please refer to <https://unlicense.org>
 
 use core::tun;
+use core::tun_callbacks;
 use env_logger::Env;
+use once_cell::sync::OnceCell;
 use smoltcp::phy::{Medium, TunTapInterface};
+use std::ffi::CString;
 use std::os::unix::io::AsRawFd;
+
+static OUT_INTERFACE: OnceCell<CString> = OnceCell::new();
 
 fn main() {
     let environment = Env::default().default_filter_or("info");
@@ -44,12 +49,30 @@ fn main() {
                 .required(true)
                 .takes_value(true),
         )
+        .arg(
+            clap::Arg::with_name("out")
+                .short('o')
+                .long("out")
+                .value_name("OUT")
+                .help("Name of the output interface")
+                .required(true)
+                .takes_value(true),
+        )
         .get_matches();
+
+    let out_interface = matches.value_of("out").unwrap();
+    OUT_INTERFACE
+        .set(CString::new(out_interface).unwrap())
+        .unwrap();
+
+    tun_callbacks::set_socket_created_callback(Some(on_socket_created));
 
     let tun_name = matches.value_of("tun").unwrap();
     match TunTapInterface::new(tun_name, Medium::Ip) {
         Ok(tun) => {
             let file_descriptor = tun.as_raw_fd();
+
+            set_panic_handler();
 
             tun::create();
             tun::start(file_descriptor);
@@ -59,6 +82,8 @@ fn main() {
 
             tun::stop();
             tun::destroy();
+
+            remove_panic_handler();
         }
         Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
             eprintln!("failed to attach to tun {:?}; permission denied", tun_name);
@@ -67,4 +92,34 @@ fn main() {
             eprintln!("failed to attach to tun {:?}", tun_name);
         }
     }
+}
+
+fn on_socket_created(raw_socket: i32) {
+    unsafe {
+        let interface_name = OUT_INTERFACE.get().unwrap();
+        let interface = interface_name.as_ptr() as *const libc::c_void;
+        let result = libc::setsockopt(
+            raw_socket,
+            libc::SOL_SOCKET,
+            libc::SO_BINDTODEVICE,
+            interface,
+            std::mem::size_of::<CString>() as libc::socklen_t,
+        );
+        if result == -1 {
+            let error_code = *libc::__errno_location() as i32;
+            let error: std::io::Result<libc::c_int> =
+                Err(std::io::Error::from_raw_os_error(error_code));
+            eprint!("failed to bind socket to interface, error={:?}", error);
+        }
+    }
+}
+
+fn set_panic_handler() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("*** PANIC [{:?}]", panic_info);
+    }));
+}
+
+fn remove_panic_handler() {
+    let _ = std::panic::take_hook();
 }

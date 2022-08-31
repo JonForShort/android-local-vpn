@@ -52,11 +52,8 @@ impl SessionData {
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
         let raw_fd = socket.as_raw_fd();
-        let is_socket_protected = on_socket_created(raw_fd);
-        log::trace!(
-            "finished protecting socket, is_socket_protected={:?}",
-            is_socket_protected
-        );
+
+        on_socket_created(raw_fd);
 
         self.poll
             .registry()
