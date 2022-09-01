@@ -75,8 +75,8 @@ pub mod android {
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(_: JNIEnv, _: JClass, file_descriptor: i32) {
         log::trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
-        socket_protector!().start();
         tun_callbacks::set_socket_created_callback(Some(on_socket_created));
+        socket_protector!().start();
         tun::start(file_descriptor);
     }
 

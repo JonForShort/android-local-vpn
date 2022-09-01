@@ -77,18 +77,21 @@ pub mod tun_callbacks {
     use std::sync::RwLock;
 
     lazy_static! {
-        static ref CALLBACK: RwLock<Option<fn(i32)>> = RwLock::new(None);
+        static ref CALLBACK: RwLock<fn(i32)> = RwLock::new(on_socket_created_stub);
     }
 
-    pub fn set_socket_created_callback(new_callback: Option<fn(i32)>) {
-        let mut callback = CALLBACK.write().unwrap();
-        *callback = new_callback;
+    pub fn set_socket_created_callback(callback: Option<fn(i32)>) {
+        let mut current_callback = CALLBACK.write().unwrap();
+        match callback {
+            Some(callback) => *current_callback = callback,
+            None => *current_callback = on_socket_created_stub,
+        }
     }
 
     pub fn on_socket_created(socket: i32) {
         let callback = CALLBACK.read().unwrap();
-        if let Some(on_socket_created_callback) = *callback {
-            on_socket_created_callback(socket);
-        }
+        callback(socket);
     }
+
+    fn on_socket_created_stub(_socket: i32) {}
 }
