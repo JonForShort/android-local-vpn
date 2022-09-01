@@ -70,12 +70,10 @@ fn main() {
     let tun_name = matches.value_of("tun").unwrap();
     match TunTapInterface::new(tun_name, Medium::Ip) {
         Ok(tun) => {
-            let file_descriptor = tun.as_raw_fd();
-
             set_panic_handler();
 
             tun::create();
-            tun::start(file_descriptor);
+            tun::start(tun.as_raw_fd());
 
             println!("Press any key to exit");
             std::io::stdin().read_line(&mut String::new()).unwrap();
@@ -94,29 +92,31 @@ fn main() {
     }
 }
 
-fn on_socket_created(raw_socket: i32) {
-    unsafe {
-        let interface_name = OUT_INTERFACE.get().unwrap();
-        let interface = interface_name.as_ptr() as *const libc::c_void;
-        let result = libc::setsockopt(
-            raw_socket,
+fn on_socket_created(socket: i32) {
+    bind_socket_to_interface(socket, OUT_INTERFACE.get().unwrap());
+}
+
+fn bind_socket_to_interface(socket: i32, interface: &CString) {
+    let result = unsafe {
+        libc::setsockopt(
+            socket,
             libc::SOL_SOCKET,
             libc::SO_BINDTODEVICE,
-            interface,
+            interface.as_ptr() as *const libc::c_void,
             std::mem::size_of::<CString>() as libc::socklen_t,
-        );
-        if result == -1 {
-            let error_code = *libc::__errno_location() as i32;
-            let error: std::io::Result<libc::c_int> =
-                Err(std::io::Error::from_raw_os_error(error_code));
-            eprint!("failed to bind socket to interface, error={:?}", error);
-        }
+        )
+    };
+    if result == -1 {
+        let error_code = unsafe { *libc::__errno_location() as i32 };
+        let error: std::io::Result<libc::c_int> =
+            Err(std::io::Error::from_raw_os_error(error_code));
+        eprint!("failed to bind socket to interface, error={:?}", error);
     }
 }
 
 fn set_panic_handler() {
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("*** PANIC [{:?}]", panic_info);
+        eprintln!("PANIC [{:?}]", panic_info);
     }));
 }
 
