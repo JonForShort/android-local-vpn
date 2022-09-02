@@ -33,7 +33,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
-use crate::utils::jni::JniContext;
+use crate::jni::jni::JniContext;
 
 lazy_static! {
     pub static ref SOCKET_PROTECTOR: Mutex<Option<SocketProtector>> = Mutex::new(None);

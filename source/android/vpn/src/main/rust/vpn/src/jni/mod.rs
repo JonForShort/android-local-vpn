@@ -27,6 +27,6 @@ pub mod jni;
 
 macro_rules! jni {
     () => {
-        crate::utils::jni::JNI.lock().unwrap().as_mut().unwrap()
+        crate::jni::jni::JNI.lock().unwrap().as_mut().unwrap()
     };
 }

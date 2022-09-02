@@ -57,15 +57,18 @@ impl Jni {
 
     pub fn new_context(&self) -> Option<JniContext> {
         match self.java_vm.attach_current_thread_permanently() {
-            Ok(jni_env) => {
-                if let Some(protect_method_id) = Jni::create_protect_jni_method_id(jni_env) {
+            Ok(jni_env) => match Jni::get_protect_method_id(jni_env) {
+                Some(protect_method_id) => {
                     return Some(JniContext {
                         jni_env,
                         object: self.object.as_obj(),
                         protect_method_id,
                     });
                 }
-            }
+                None => {
+                    log::error!("failed to get protect method id");
+                }
+            },
             Err(error) => {
                 log::error!("failed to attach to current thread, error={:?}", error);
             }
@@ -73,12 +76,18 @@ impl Jni {
         None
     }
 
-    fn create_protect_jni_method_id(jni_env: JNIEnv) -> Option<JMethodID> {
-        if let Ok(class) = jni_env.find_class("android/net/VpnService") {
-            log::trace!("found vpn service class");
-            if let Ok(method_id) = jni_env.get_method_id(class, "protect", "(I)Z") {
-                log::trace!("found protect method id");
-                return Some(method_id);
+    fn get_protect_method_id(jni_env: JNIEnv) -> Option<JMethodID> {
+        match jni_env.find_class("android/net/VpnService") {
+            Ok(class) => match jni_env.get_method_id(class, "protect", "(I)Z") {
+                Ok(method_id) => {
+                    return Some(method_id);
+                }
+                Err(error) => {
+                    log::error!("failed to get protect method id, error={:?}", error);
+                }
+            },
+            Err(error) => {
+                log::error!("failed to find vpn service class, error={:?}", error);
             }
         }
         None
@@ -95,20 +104,20 @@ impl<'a> JniContext<'a> {
     pub fn protect_socket(&self, socket: i32) -> bool {
         if socket <= 0 {
             log::error!("invalid socket, socket={:?}", socket);
-            return true;
+            return false;
         }
-        let is_successful = JavaType::Primitive(Primitive::Boolean);
+        let return_type = JavaType::Primitive(Primitive::Boolean);
         let arguments = [JValue::Int(socket)];
         let result = self.jni_env.call_method_unchecked(
             self.object,
             self.protect_method_id,
-            is_successful,
+            return_type,
             &arguments[..],
         );
         match result {
             Ok(value) => {
                 log::trace!("protected socket, result={:?}", value);
-                true
+                value.z().unwrap()
             }
             Err(error_code) => {
                 log::error!("failed to protect socket, error={:?}", error_code);

@@ -24,7 +24,7 @@
 // For more information, please refer to <https://unlicense.org>
 
 #[macro_use]
-mod utils;
+mod jni;
 
 #[macro_use]
 mod socket_protector;
@@ -41,8 +41,8 @@ pub mod android {
     use self::jni::objects::{JClass, JObject};
     use self::jni::JNIEnv;
 
+    use crate::jni::jni::Jni;
     use crate::socket_protector::socket_protector::SocketProtector;
-    use crate::utils::jni::Jni;
 
     use android_logger::Config;
     use core::tun;
