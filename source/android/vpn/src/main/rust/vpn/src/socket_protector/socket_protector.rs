@@ -92,23 +92,27 @@ impl SocketProtector {
 
     fn handle_protect_socket_request(receiver: &ReceiverChannel, jni_context: &JniContext) {
         let (socket, reply_sender) = receiver.recv().unwrap();
-        log::trace!("handling protect socket request, socket={:?}", socket);
-        if socket <= 0 {
-            log::trace!("found invalid socket");
-            return;
-        }
-        if jni_context.protect_socket(socket) {
-            log::trace!("finished protecting socket");
-            match reply_sender.send(true) {
-                Ok(_) => {
-                    log::trace!("finished replying back to sender")
-                }
-                Err(_) => {
-                    log::trace!("failed to replyback to sender")
-                }
-            }
+        let is_socket_protected = if socket <= 0 {
+            log::trace!("found invalid socket, socket={:?}", socket);
+            false
+        } else if jni_context.protect_socket(socket) {
+            log::trace!("finished protecting socket, socket={:?}", socket);
+            true
         } else {
-            log::error!("failed to protect socket");
+            log::error!("failed to protect socket, socket={:?}", socket);
+            false
+        };
+        match reply_sender.send(is_socket_protected) {
+            Ok(_) => {
+                log::trace!("finished sending result, socket={:?}", socket)
+            }
+            Err(error) => {
+                log::error!(
+                    "failed to send result, socket={:?} error={:?}",
+                    socket,
+                    error
+                );
+            }
         }
     }
 
@@ -131,11 +135,11 @@ impl SocketProtector {
                     }
                 }
             }
-            Err(error_code) => {
+            Err(error) => {
                 log::error!(
                     "failed to protect socket, socket={:?} error={:?}",
                     socket,
-                    error_code
+                    error
                 );
             }
         }
