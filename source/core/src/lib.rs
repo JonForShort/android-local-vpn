@@ -48,11 +48,11 @@ pub mod tun {
     }
 
     pub fn create() {
-        log::trace!("create");
+        log::trace!("create, pid={}", process::id());
     }
 
     pub fn destroy() {
-        log::trace!("destroy");
+        log::trace!("dstroy, pid={}", process::id());
     }
 
     pub fn start(file_descriptor: i32) {

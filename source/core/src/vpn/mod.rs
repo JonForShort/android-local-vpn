@@ -24,8 +24,8 @@
 // For more information, please refer to <https://unlicense.org>
 
 mod channel;
-mod ip_layer;
 mod session_manager;
+mod tun;
 mod vpn_device;
 
 pub mod vpn;

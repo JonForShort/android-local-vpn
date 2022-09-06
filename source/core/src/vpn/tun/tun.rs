@@ -23,7 +23,7 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::channel::IpLayerChannel;
+use super::channel::TunChannel;
 use crate::smoltcp_ext::wire::log_packet;
 use crate::vpn::channel::types::TryRecvError;
 use std::fs::File;
@@ -34,16 +34,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-pub struct IpLayerProcessor {
+pub struct Tun {
     file_descriptor: i32,
-    channel: IpLayerChannel,
+    channel: TunChannel,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
-impl IpLayerProcessor {
-    pub fn new(file_descriptor: i32, channel: IpLayerChannel) -> IpLayerProcessor {
-        IpLayerProcessor {
+impl Tun {
+    pub fn new(file_descriptor: i32, channel: TunChannel) -> Tun {
+        Tun {
             file_descriptor,
             channel,
             is_thread_running: Arc::new(AtomicBool::new(false)),
@@ -52,26 +52,33 @@ impl IpLayerProcessor {
     }
 
     pub fn start(&mut self) {
-        log::trace!("starting ip layer processor");
+        log::trace!("starting");
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
         let channel = self.channel.clone();
         let mut file = unsafe { File::from_raw_fd(self.file_descriptor) };
         self.thread_join_handle = Some(std::thread::spawn(move || {
             while is_thread_running.load(Ordering::SeqCst) {
-                IpLayerProcessor::poll_outgoing_data(&mut file, &channel);
-                IpLayerProcessor::poll_incoming_data(&mut file, &channel)
+                Tun::poll_outgoing_data(&mut file, &channel);
+                Tun::poll_incoming_data(&mut file, &channel)
             }
-            log::trace!("ip layer processor is stopping");
+            log::trace!("stopping");
         }));
     }
 
-    fn poll_outgoing_data(file: &mut File, channel: &IpLayerChannel) {
+    pub fn stop(&mut self) {
+        log::trace!("stopping");
+        self.is_thread_running.store(false, Ordering::SeqCst);
+        self.thread_join_handle.take().unwrap().join().unwrap();
+        log::trace!("stopped");
+    }
+
+    fn poll_outgoing_data(file: &mut File, channel: &TunChannel) {
         let mut read_buffer: [u8; 65535] = [0; 65535];
         match file.read(&mut read_buffer) {
             Ok(read_count) => {
                 let bytes = read_buffer[..read_count].to_vec();
-                log_packet("ip layer : outgoing", &bytes);
+                log_packet("tun : outgoing", &bytes);
                 let result = channel.0.send(bytes);
                 match result {
                     Ok(_) => {
@@ -91,11 +98,11 @@ impl IpLayerProcessor {
         }
     }
 
-    fn poll_incoming_data(file: &mut File, channel: &IpLayerChannel) {
+    fn poll_incoming_data(file: &mut File, channel: &TunChannel) {
         let result = channel.1.try_recv();
         match result {
             Ok(bytes) => {
-                log_packet("ip layer : incoming", &bytes);
+                log_packet("tun : incoming", &bytes);
                 match file.write_all(&bytes[..]) {
                     Ok(_) => {
                         // nothing to do here.
@@ -113,12 +120,5 @@ impl IpLayerProcessor {
                 }
             }
         }
-    }
-
-    pub fn stop(&mut self) {
-        log::trace!("stopping ip layer processor");
-        self.is_thread_running.store(false, Ordering::SeqCst);
-        self.thread_join_handle.take().unwrap().join().unwrap();
-        log::trace!("ip layer processor is stopped");
     }
 }

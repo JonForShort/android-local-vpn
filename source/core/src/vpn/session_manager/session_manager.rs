@@ -29,7 +29,7 @@ use super::session::Session;
 use super::session_data::SessionData;
 use crate::smoltcp_ext::wire::log_packet;
 use crate::vpn::channel::types::TryRecvError;
-use crate::vpn::ip_layer::channel::IpLayerChannel;
+use crate::vpn::tun::channel::TunChannel;
 use crate::vpn::vpn_device::VpnDevice;
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
@@ -43,36 +43,43 @@ use std::thread::JoinHandle;
 type Sessions<'a> = HashMap<Session, SessionData<'a, VpnDevice>>;
 
 pub struct SessionManager {
-    ip_layer_channel: IpLayerChannel,
+    tun_channel: TunChannel,
     is_thread_running: Arc<AtomicBool>,
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl SessionManager {
-    pub fn new(ip_layer_channel: IpLayerChannel) -> SessionManager {
+    pub fn new(tun_channel: TunChannel) -> SessionManager {
         SessionManager {
-            ip_layer_channel,
+            tun_channel,
             is_thread_running: Arc::new(AtomicBool::new(false)),
             thread_join_handle: None,
         }
     }
 
     pub fn start(&mut self) {
-        log::trace!("starting session manager");
+        log::trace!("starting");
         self.is_thread_running.store(true, Ordering::SeqCst);
         let is_thread_running = self.is_thread_running.clone();
-        let ip_layer_channel = self.ip_layer_channel.clone();
+        let tun_channel = self.tun_channel.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
             let mut sessions = Sessions::new();
-            let ip_layer_channel = ip_layer_channel;
+            let tun_channel = tun_channel;
             while is_thread_running.load(Ordering::SeqCst) {
-                SessionManager::process_outgoing_ip_layer_data(&mut sessions, &ip_layer_channel);
+                SessionManager::process_outgoing_tun_data(&mut sessions, &tun_channel);
                 SessionManager::process_incoming_tcp_layer_data(&mut sessions);
-                SessionManager::poll_sessions(&mut sessions, &ip_layer_channel);
+                SessionManager::poll_sessions(&mut sessions, &tun_channel);
                 SessionManager::clean_up_sessions(&mut sessions);
             }
-            log::trace!("session manager is stopping");
+            log::trace!("stopping");
         }));
+    }
+
+    pub fn stop(&mut self) {
+        log::trace!("stopping");
+        self.is_thread_running.store(false, Ordering::SeqCst);
+        self.thread_join_handle.take().unwrap().join().unwrap();
+        log::trace!("stopped");
     }
 
     fn build_session(bytes: &Vec<u8>) -> Option<Session> {
@@ -104,14 +111,14 @@ impl SessionManager {
         None
     }
 
-    fn poll_sessions(sessions: &mut Sessions, ip_layer_channel: &IpLayerChannel) {
+    fn poll_sessions(sessions: &mut Sessions, tun_channel: &TunChannel) {
         for (_, session_data) in sessions.iter_mut() {
             let interface = session_data.interface();
             match interface.poll(Instant::now()) {
                 Ok(has_readiness_changed) => {
                     if has_readiness_changed {
                         SessionManager::process_received_tcp_data(session_data);
-                        SessionManager::process_sent_tcp_data(session_data, ip_layer_channel);
+                        SessionManager::process_sent_tcp_data(session_data, tun_channel);
                     }
                 }
                 Err(error) if error == Error::Unrecognized => {
@@ -143,22 +150,22 @@ impl SessionManager {
         }
     }
 
-    fn process_sent_tcp_data(session_data: &mut SessionData<VpnDevice>, channel: &IpLayerChannel) {
+    fn process_sent_tcp_data(session_data: &mut SessionData<VpnDevice>, channel: &TunChannel) {
         let device = session_data.interface().device_mut();
         if let Some(bytes) = device.transmit() {
-            log_packet("session manager : to ip layer", &bytes);
+            log_packet("session manager : to tun", &bytes);
             let result = channel.0.send(bytes);
             if let Err(error) = result {
-                log::error!("failed to send bytes to ip layer, error=[{:?}]", error);
+                log::error!("failed to send bytes to tun, error=[{:?}]", error);
             }
         }
     }
 
-    fn process_outgoing_ip_layer_data(sessions: &mut Sessions, channel: &IpLayerChannel) {
+    fn process_outgoing_tun_data(sessions: &mut Sessions, channel: &TunChannel) {
         let result = channel.1.try_recv();
         match result {
             Ok(bytes) => {
-                log_packet("session manager : from ip layer", &bytes);
+                log_packet("session manager : from tun", &bytes);
                 if let Some(session) = SessionManager::build_session(&bytes) {
                     if sessions.contains_key(&session) {
                         log::trace!("session already exists, session=[{:?}]", session);
@@ -181,10 +188,7 @@ impl SessionManager {
                 if error == TryRecvError::Empty {
                     // do nothing.
                 } else {
-                    log::error!(
-                        "failed to receive outgoing ip layer data, error={:?}",
-                        error
-                    );
+                    log::error!("failed to receive outgoing tun data, error={:?}", error);
                 }
             }
         }
@@ -215,12 +219,5 @@ impl SessionManager {
                 _ => true,
             },
         );
-    }
-
-    pub fn stop(&mut self) {
-        log::trace!("stopping session manager");
-        self.is_thread_running.store(false, Ordering::SeqCst);
-        self.thread_join_handle.take().unwrap().join().unwrap();
-        log::trace!("session manager is stopped");
     }
 }

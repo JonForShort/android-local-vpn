@@ -25,46 +25,41 @@
 
 extern crate log;
 
-use super::ip_layer::processor::IpLayerProcessor;
 use super::session_manager::session_manager::SessionManager;
+use super::tun::tun::Tun;
 use crossbeam::channel::unbounded;
 
 pub struct Vpn {
     file_descriptor: i32,
-    ip_layer_processor: IpLayerProcessor,
+    tun: Tun,
     session_manager: SessionManager,
 }
 
 impl Vpn {
     pub fn new(file_descriptor: i32) -> Self {
-        let ip_layer_channel = unbounded();
+        let tun_channel = unbounded();
         let session_manager_channel = unbounded();
 
-        let ip_layer_processor = IpLayerProcessor::new(
-            file_descriptor,
-            (session_manager_channel.0, ip_layer_channel.1),
-        );
-        let session_manager = SessionManager::new(
-            (ip_layer_channel.0, session_manager_channel.1)
-        );
+        let tun = Tun::new(file_descriptor, (session_manager_channel.0, tun_channel.1));
+        let session_manager = SessionManager::new((tun_channel.0, session_manager_channel.1));
 
         Self {
             file_descriptor,
-            ip_layer_processor,
+            tun,
             session_manager,
         }
     }
 
     pub fn start(&mut self) {
         log::trace!("starting native vpn");
-        self.ip_layer_processor.start();
+        self.tun.start();
         self.session_manager.start();
         log::trace!("started native vpn");
     }
 
     pub fn stop(&mut self) {
         log::trace!("stopping native vpn");
-        self.ip_layer_processor.stop();
+        self.tun.stop();
         self.session_manager.stop();
         unsafe {
             libc::close(self.file_descriptor);

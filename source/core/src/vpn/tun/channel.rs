@@ -25,4 +25,4 @@
 
 use crate::vpn::channel::types::Channel;
 
-pub type IpLayerChannel = Channel<Vec<u8>>;
+pub type TunChannel = Channel<Vec<u8>>;
