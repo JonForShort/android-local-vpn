@@ -25,5 +25,6 @@
 
 mod session;
 mod session_data;
+mod tcp_session_data;
 
 pub mod session_manager;

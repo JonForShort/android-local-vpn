@@ -24,6 +24,7 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::session::Session;
+use super::tcp_session_data::TcpSessionData;
 use smoltcp::iface::{Interface, InterfaceBuilder, Routes, SocketHandle};
 use smoltcp::phy::Device;
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
@@ -37,6 +38,7 @@ where
 {
     interface: Interface<'a, DeviceT>,
     socket_handle: SocketHandle,
+    tcp_session_data: TcpSessionData,
 }
 
 impl<'a, DeviceT> SessionData<'a, DeviceT>
@@ -55,9 +57,13 @@ where
 
         let socket_handle = interface.add_socket(socket);
 
+        let mut tcp_session_data = TcpSessionData::new();
+        tcp_session_data.connect_stream(session.dst_ip, session.dst_port);
+
         SessionData {
             interface,
             socket_handle,
+            tcp_session_data,
         }
     }
 
@@ -69,6 +75,10 @@ where
         let socket_handle = self.socket_handle;
         let interface = self.interface();
         interface.get_socket::<TcpSocket<'a>>(socket_handle)
+    }
+
+    pub fn tcp_session_data(&mut self) -> &mut TcpSessionData {
+        &mut self.tcp_session_data
     }
 }
 

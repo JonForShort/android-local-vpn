@@ -33,15 +33,15 @@ use std::os::unix::io::AsRawFd;
 
 const EVENT_CAPACITY: usize = 16;
 
-pub struct SessionData {
+pub struct TcpSessionData {
     poll: Poll,
     socket: Option<Socket>,
     events: Events,
 }
 
-impl SessionData {
-    pub fn new() -> SessionData {
-        SessionData {
+impl TcpSessionData {
+    pub fn new() -> TcpSessionData {
+        TcpSessionData {
             poll: Poll::new().unwrap(),
             socket: None,
             events: Events::with_capacity(EVENT_CAPACITY),
