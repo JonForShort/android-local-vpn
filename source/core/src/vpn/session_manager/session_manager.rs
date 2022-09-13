@@ -26,21 +26,24 @@
 extern crate smoltcp;
 
 use super::session::Session;
-use super::session_data::SessionData;
+use super::session::SessionData;
 use crate::smoltcp_ext::wire::log_packet;
 use crate::vpn::channel::types::TryRecvError;
 use crate::vpn::tun::channel::TunChannel;
 use crate::vpn::vpn_device::VpnDevice;
+use smoltcp::iface::{Interface, InterfaceBuilder, Routes};
+use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
 use smoltcp::time::Instant;
-use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
+use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint, IpProtocol, Ipv4Address, Ipv4Packet, TcpPacket};
 use smoltcp::Error;
+use std::collections::btree_map::BTreeMap;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
-type Sessions<'a> = HashMap<Session, SessionData<'a, VpnDevice>>;
+type Sessions<'a> = HashMap<Session, SessionData>;
 
 pub struct SessionManager {
     tun_channel: TunChannel,
@@ -48,7 +51,7 @@ pub struct SessionManager {
     thread_join_handle: Option<JoinHandle<()>>,
 }
 
-impl SessionManager {
+impl<'a> SessionManager {
     pub fn new(tun_channel: TunChannel) -> SessionManager {
         SessionManager {
             tun_channel,
@@ -65,11 +68,12 @@ impl SessionManager {
         self.thread_join_handle = Some(std::thread::spawn(move || {
             let mut sessions = Sessions::new();
             let tun_channel = tun_channel;
+            let mut interface = SessionManager::create_interface();
             while is_thread_running.load(Ordering::SeqCst) {
-                SessionManager::process_outgoing_tun_data(&mut sessions, &tun_channel);
-                SessionManager::process_incoming_tcp_layer_data(&mut sessions);
-                SessionManager::poll_sessions(&mut sessions, &tun_channel);
-                SessionManager::clean_up_sessions(&mut sessions);
+                SessionManager::process_outgoing_tun_data(&mut sessions, &mut interface, &tun_channel);
+                SessionManager::process_incoming_tcp_layer_data(&mut sessions, &mut interface);
+                SessionManager::process_received_tcp_data(&mut sessions, &mut interface);
+                SessionManager::clean_up_sessions(&mut sessions, &mut interface);
             }
             log::trace!("stopping");
         }));
@@ -111,57 +115,38 @@ impl SessionManager {
         None
     }
 
-    fn poll_sessions(sessions: &mut Sessions, tun_channel: &TunChannel) {
-        for (_, session_data) in sessions.iter_mut() {
-            let interface = session_data.interface();
-            match interface.poll(Instant::now()) {
-                Ok(has_readiness_changed) => {
-                    if has_readiness_changed {
-                        SessionManager::process_received_tcp_data(session_data);
-                        SessionManager::process_sent_tcp_data(session_data, tun_channel);
-                    }
-                }
-                Err(error) if error == Error::Unrecognized => {
-                    // nothing to do.
-                }
-                Err(error) => {
-                    log::error!("received error when polling interfaces, errro={:?}", error);
-                }
-            }
-        }
+    fn create_interface() -> Interface<'a, VpnDevice> {
+        let mut routes = Routes::new(BTreeMap::new());
+        let default_gateway_ipv4 = Ipv4Address::new(0, 0, 0, 1);
+        routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
+
+        let interface = InterfaceBuilder::new(VpnDevice::new(), vec![])
+            .any_ip(true)
+            .ip_addrs([IpCidr::new(IpAddress::v4(0, 0, 0, 1), 0)])
+            .routes(routes)
+            .finalize();
+        interface
     }
 
-    fn process_received_tcp_data(session_data: &mut SessionData<VpnDevice>) {
-        let tcp_socket = session_data.tcp_socket();
-        let mut buffer = vec![];
-        while tcp_socket.can_recv() {
-            let result = tcp_socket.recv(|received_data| {
-                buffer.extend_from_slice(received_data);
-                (received_data.len(), received_data)
-            });
-            if let Err(error) = result {
-                log::error!("failed to receive from tcp socket, error={:?}", error);
-                break;
-            }
+    fn create_socket(session: &Session) -> Option<TcpSocket<'a>> {
+        let mut socket = TcpSocket::new(
+            TcpSocketBuffer::new(vec![0; 1048576]),
+            TcpSocketBuffer::new(vec![0; 1048576]),
+        );
+
+        let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
+        let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
+        if socket.listen(dst_endpoint).is_err() {
+            log::error!("failed to listen for session, session=[{}]", session);
+            return None;
         }
-        let tcp_session_data = session_data.tcp_session_data();
-        if let Err(error) = tcp_session_data.send_data(&buffer[..]) {
-            log::error!("failed to send buffer to tcp session, error={:?}", error);
-        }
+
+        socket.set_ack_delay(None);
+
+        Some(socket)
     }
 
-    fn process_sent_tcp_data(session_data: &mut SessionData<VpnDevice>, channel: &TunChannel) {
-        let device = session_data.interface().device_mut();
-        if let Some(bytes) = device.transmit() {
-            log_packet("session manager : to tun", &bytes);
-            let result = channel.0.send(bytes);
-            if let Err(error) = result {
-                log::error!("failed to send bytes to tun, error=[{:?}]", error);
-            }
-        }
-    }
-
-    fn process_outgoing_tun_data(sessions: &mut Sessions, channel: &TunChannel) {
+    fn process_outgoing_tun_data(sessions: &mut Sessions, interface: &mut Interface<'a, VpnDevice>, channel: &TunChannel) {
         let result = channel.1.try_recv();
         match result {
             Ok(bytes) => {
@@ -171,16 +156,25 @@ impl SessionManager {
                         log::trace!("session already exists, session=[{:?}]", session);
                     } else {
                         log::trace!("starting new session, session=[{:?}]", session);
-                        sessions.insert(
-                            session.clone(),
-                            SessionData::new(&session, VpnDevice::new()),
-                        );
+                        let socket = SessionManager::create_socket(&session).unwrap();
+                        let socket_handle = interface.add_socket(socket);
+                        let session_data = SessionData::new(&session, socket_handle);
+                        sessions.insert(session, session_data);
                     };
-                    if let Some(session_data) = sessions.get_mut(&session) {
-                        let interface = session_data.interface();
-                        interface.device_mut().receive(bytes);
-                    } else {
-                        log::error!("unable to find session; session is expected to be created.")
+                    interface.device_mut().receive(bytes);
+
+                    match interface.poll(Instant::now()) {
+                        Ok(is_readiness_changed) => {
+                            if is_readiness_changed {
+                                SessionManager::process_sent_tcp_data(interface, channel)
+                            }
+                        }
+                        Err(error) if error == Error::Unrecognized => {
+                            // nothing to do.
+                        }
+                        Err(error) => {
+                            log::error!("received error when polling interfaces, error={:?}", error);
+                        }
                     }
                 }
             }
@@ -194,12 +188,25 @@ impl SessionManager {
         }
     }
 
-    fn process_incoming_tcp_layer_data(sessions: &mut Sessions) {
+    fn process_sent_tcp_data(interface: &mut Interface<'a, VpnDevice>, channel: &TunChannel) {
+        let device = interface.device_mut();
+        while let Some(bytes) = device.transmit() {
+            log_packet("session manager : to tun", &bytes);
+            let result = channel.0.send(bytes);
+            if let Err(error) = result {
+                log::error!("failed to send bytes to tun, error=[{:?}]", error);
+            }
+        }
+    }
+
+    fn process_incoming_tcp_layer_data(sessions: &mut Sessions, interface: &mut Interface<'a, VpnDevice>) {
         for (_, session_data) in sessions.iter_mut() {
-            if session_data.tcp_session_data().is_data_available() && session_data.tcp_socket().can_send() {
-                match session_data.tcp_session_data().read_data() {
+            let tcp_socket = interface.get_socket::<TcpSocket>(session_data.socket_handle());
+            let tcp_stream = session_data.tcp_stream();
+            if tcp_stream.is_ready() && tcp_socket.can_send() {
+                match tcp_stream.read() {
                     Ok(bytes) => {
-                        session_data.tcp_socket().send_slice(&bytes[..]).unwrap();
+                        tcp_socket.send_slice(&bytes[..]).unwrap();
                     }
                     Err(error) => {
                         log::error!("failed to read data from tcp session, error={:?}", error);
@@ -209,15 +216,38 @@ impl SessionManager {
         }
     }
 
-    fn clean_up_sessions(sessions: &mut Sessions) {
-        sessions.retain(
-            |session, session_data| match session_data.tcp_socket().state() {
+    fn process_received_tcp_data(sessions: &mut Sessions, interface: &mut Interface<'a, VpnDevice>) {
+        for (_, session_data) in sessions.iter_mut() {
+            let tcp_socket = interface.get_socket::<TcpSocket>(session_data.socket_handle());
+            let mut buffer = vec![];
+            while tcp_socket.can_recv() {
+                let result = tcp_socket.recv(|received_data| {
+                    buffer.extend_from_slice(received_data);
+                    (received_data.len(), received_data)
+                });
+                if let Err(error) = result {
+                    log::error!("failed to receive from tcp socket, error={:?}", error);
+                    break;
+                }
+            }
+            let tcp_stream = session_data.tcp_stream();
+            if let Err(error) = tcp_stream.write(&buffer[..]) {
+                log::error!("failed to write to tcp stream, error={:?}", error);
+            }
+        }
+    }
+
+    fn clean_up_sessions(sessions: &mut Sessions, interface: &mut Interface<'a, VpnDevice>) {
+        sessions.retain(|session, session_data| {
+            let socket_handle = session_data.socket_handle();
+            let tcp_socket = interface.get_socket::<TcpSocket>(socket_handle);
+            match tcp_socket.state() {
                 smoltcp::socket::TcpState::CloseWait => {
                     log::trace!("removing closed session, session=[{:?}]", session);
                     false
                 }
                 _ => true,
-            },
-        );
+            }
+        });
     }
 }

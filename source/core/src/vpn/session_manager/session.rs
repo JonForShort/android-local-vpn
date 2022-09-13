@@ -23,6 +23,8 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
+use super::tcp_stream::TcpStream;
+use smoltcp::iface::SocketHandle;
 use std::fmt;
 use std::hash::Hash;
 
@@ -50,4 +52,28 @@ impl fmt::Display for Session {
 
 fn ip_octet_to_string(ip: &[u8; 4]) -> String {
     ip.iter().map(|&i| i.to_string() + ".").collect()
+}
+
+pub struct SessionData {
+    socket_handle: SocketHandle,
+    tcp_stream: TcpStream,
+}
+
+impl SessionData {
+    pub fn new(session: &Session, socket_handle: SocketHandle) -> SessionData {
+        let mut tcp_stream = TcpStream::new();
+        tcp_stream.connect(session.dst_ip, session.dst_port);
+        SessionData {
+            socket_handle,
+            tcp_stream,
+        }
+    }
+
+    pub fn tcp_stream(&mut self) -> &mut TcpStream {
+        &mut self.tcp_stream
+    }
+
+    pub fn socket_handle(&mut self) -> SocketHandle {
+        self.socket_handle.clone()
+    }
 }

@@ -33,22 +33,22 @@ use std::os::unix::io::AsRawFd;
 
 const EVENT_CAPACITY: usize = 16;
 
-pub struct TcpSessionData {
+pub struct TcpStream {
     poll: Poll,
     socket: Option<Socket>,
     events: Events,
 }
 
-impl TcpSessionData {
-    pub fn new() -> TcpSessionData {
-        TcpSessionData {
+impl TcpStream {
+    pub fn new() -> TcpStream {
+        TcpStream {
             poll: Poll::new().unwrap(),
             socket: None,
             events: Events::with_capacity(EVENT_CAPACITY),
         }
     }
 
-    pub fn connect_stream(&mut self, ip: [u8; 4], port: u16) {
+    pub fn connect(&mut self, ip: [u8; 4], port: u16) {
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
         let raw_fd = socket.as_raw_fd();
@@ -73,7 +73,7 @@ impl TcpSessionData {
         match result {
             Ok(_) => {
                 log::trace!(
-                    "successfully connected to remote host, ip={:?}, port={:?}, remote_address=[{:?}]",
+                    "connected to remote host, ip={:?}, port={:?}, remote_address=[{:?}]",
                     ip,
                     port,
                     remote_address
@@ -94,7 +94,7 @@ impl TcpSessionData {
         self.socket = Some(socket);
     }
 
-    pub fn is_data_available(&mut self) -> bool {
+    pub fn is_ready(&mut self) -> bool {
         let timeout = Some(std::time::Duration::from_millis(0));
         let result = self.poll.poll(&mut self.events, timeout);
         if result.is_ok() {
@@ -104,15 +104,11 @@ impl TcpSessionData {
         }
     }
 
-    pub fn send_data(&mut self, bytes: &[u8]) -> Result<usize> {
-        let result = self.socket.as_ref().unwrap().send(bytes);
-        if let Ok(size) = result {
-            log::trace!("sent data to socket, size={:?}, data={:?}", size, bytes);
-        }
-        result
+    pub fn write(&mut self, bytes: &[u8]) -> Result<usize> {
+        self.socket.as_ref().unwrap().send(bytes)
     }
 
-    pub fn read_data(&mut self) -> Result<Vec<u8>> {
+    pub fn read(&mut self) -> Result<Vec<u8>> {
         let mut bytes: Vec<u8> = Vec::new();
         let mut read_buffer = [0; 1024];
         if let Some(socket) = &mut self.socket {

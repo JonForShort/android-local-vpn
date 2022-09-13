@@ -24,7 +24,6 @@
 // For more information, please refer to <https://unlicense.org>
 
 mod session;
-mod session_data;
-mod tcp_session_data;
+mod tcp_stream;
 
 pub mod session_manager;
