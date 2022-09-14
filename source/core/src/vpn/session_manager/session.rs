@@ -25,6 +25,7 @@
 
 use super::tcp_stream::TcpStream;
 use smoltcp::iface::SocketHandle;
+use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 use std::fmt;
 use std::hash::Hash;
 
@@ -35,6 +36,36 @@ pub struct Session {
     pub dst_ip: [u8; 4],
     pub dst_port: u16,
     pub protocol: u8,
+}
+
+impl Session {
+    pub fn new(bytes: &Vec<u8>) -> Option<Session> {
+        match Ipv4Packet::new_checked(&bytes) {
+            Ok(ip_packet) => {
+                if ip_packet.protocol() == IpProtocol::Tcp {
+                    let payload = ip_packet.payload();
+                    let tcp_packet = TcpPacket::new_checked(payload).unwrap();
+                    let src_ip_bytes = ip_packet.src_addr().as_bytes().try_into().unwrap();
+                    let dst_ip_bytes = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    return Some(Session {
+                        src_ip: src_ip_bytes,
+                        src_port: tcp_packet.src_port(),
+                        dst_ip: dst_ip_bytes,
+                        dst_port: tcp_packet.dst_port(),
+                        protocol: u8::from(ip_packet.protocol()),
+                    });
+                }
+            }
+            Err(error) => {
+                log::error!(
+                    "failed to build session, len={:?}, error={:?}",
+                    bytes.len(),
+                    error
+                );
+            }
+        }
+        None
+    }
 }
 
 impl fmt::Display for Session {
@@ -74,6 +105,6 @@ impl SessionData {
     }
 
     pub fn socket_handle(&mut self) -> SocketHandle {
-        self.socket_handle.clone()
+        self.socket_handle
     }
 }
