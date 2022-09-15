@@ -94,16 +94,6 @@ impl TcpStream {
         self.socket = Some(socket);
     }
 
-    pub fn is_ready(&mut self) -> bool {
-        let timeout = Some(std::time::Duration::from_millis(0));
-        let result = self.poll.poll(&mut self.events, timeout);
-        if result.is_ok() {
-            self.events.iter().count() > 0
-        } else {
-            false
-        }
-    }
-
     pub fn write(&mut self, bytes: &[u8]) -> Result<usize> {
         self.socket.as_ref().unwrap().send(bytes)
     }
@@ -132,5 +122,15 @@ impl TcpStream {
             }
         }
         Ok(bytes)
+    }
+
+    pub fn can_read(&mut self) -> bool {
+        let timeout = Some(std::time::Duration::from_millis(0));
+        let result = self.poll.poll(&mut self.events, timeout);
+        if result.is_ok() {
+            self.events.iter().count() > 0
+        } else {
+            false
+        }
     }
 }

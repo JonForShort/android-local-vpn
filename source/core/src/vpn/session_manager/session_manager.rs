@@ -167,7 +167,7 @@ impl<'a> SessionManager {
         for (_, session_data) in sessions.iter_mut() {
             let tcp_socket = interface.get_socket::<TcpSocket>(session_data.socket_handle());
             let tcp_stream = session_data.tcp_stream();
-            if tcp_stream.is_ready() && tcp_socket.can_send() {
+            if tcp_stream.can_read() && tcp_socket.can_send() {
                 match tcp_stream.read() {
                     Ok(bytes) => {
                         tcp_socket.send_slice(&bytes[..]).unwrap();
