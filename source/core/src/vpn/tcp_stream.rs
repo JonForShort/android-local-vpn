@@ -25,73 +25,57 @@
 
 use crate::tun_callbacks::on_socket_created;
 use mio::unix::SourceFd;
-use mio::{Events, Interest, Poll, Token};
+use mio::{Interest, Poll, Token};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::io::{ErrorKind, Read, Result};
 use std::net::SocketAddr;
 use std::os::unix::io::AsRawFd;
 
-const EVENT_CAPACITY: usize = 16;
-
-pub struct TcpStream {
-    poll: Poll,
+pub(crate) struct TcpStream {
     socket: Option<Socket>,
-    events: Events,
 }
 
 impl TcpStream {
     pub fn new() -> TcpStream {
-        TcpStream {
-            poll: Poll::new().unwrap(),
-            socket: None,
-            events: Events::with_capacity(EVENT_CAPACITY),
-        }
+        TcpStream { socket: None }
     }
 
     pub fn connect(&mut self, ip: [u8; 4], port: u16) {
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
-        let raw_fd = socket.as_raw_fd();
+        on_socket_created(socket.as_raw_fd());
 
-        on_socket_created(raw_fd);
+        let address = SockAddr::from(SocketAddr::from((ip, port)));
 
-        self.poll
-            .registry()
-            .register(&mut SourceFd(&raw_fd), Token(0), Interest::READABLE)
-            .unwrap();
+        log::trace!("connecting to host, address={:?}", address);
 
-        let remote_address = SockAddr::from(SocketAddr::from((ip, port)));
-
-        log::trace!(
-            "attempting to connect to remote host, ip={:?}, port={:?}, remote_address=[{:?}]",
-            ip,
-            port,
-            remote_address
-        );
-
-        let result = socket.connect(&remote_address);
-        match result {
+        match socket.connect(&address) {
             Ok(_) => {
-                log::trace!(
-                    "connected to remote host, ip={:?}, port={:?}, remote_address=[{:?}]",
-                    ip,
-                    port,
-                    remote_address
-                );
-                socket.set_nonblocking(true).unwrap();
+                log::trace!("connected to host, address={:?}", address);
             }
-            Err(error_code) => {
+            Err(error) => {
                 log::error!(
-                    "failed to connect to remote host, error_code={:?}, ip={:?}, port={:?}, remote_address=[{:?}]",
-                    error_code,
-                    ip,
-                    port,
-                    remote_address
+                    "failed to connect to host, error={:?} address={:?}",
+                    error,
+                    address
                 );
             }
         }
 
+        socket.set_nonblocking(true).unwrap();
+
         self.socket = Some(socket);
+    }
+
+    pub fn register_poll(&self, poll: &mut Poll, token: Token) {
+        let raw_fd = &self.socket.as_ref().unwrap().as_raw_fd();
+        poll.registry()
+            .register(
+                &mut SourceFd(raw_fd),
+                token,
+                Interest::READABLE | Interest::WRITABLE,
+            )
+            .unwrap()
     }
 
     pub fn write(&mut self, bytes: &[u8]) -> Result<usize> {
@@ -122,15 +106,5 @@ impl TcpStream {
             }
         }
         Ok(bytes)
-    }
-
-    pub fn can_read(&mut self) -> bool {
-        let timeout = Some(std::time::Duration::from_millis(0));
-        let result = self.poll.poll(&mut self.events, timeout);
-        if result.is_ok() {
-            self.events.iter().count() > 0
-        } else {
-            false
-        }
     }
 }

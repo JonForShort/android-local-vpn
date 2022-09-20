@@ -23,14 +23,16 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
+use super::buffers::Buffers;
 use super::tcp_stream::TcpStream;
+use mio::{Poll, Token};
 use smoltcp::iface::SocketHandle;
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
 use std::fmt;
 use std::hash::Hash;
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone)]
-pub struct Session {
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+pub(crate) struct Session {
     pub src_ip: [u8; 4],
     pub src_port: u16,
     pub dst_ip: [u8; 4],
@@ -85,18 +87,22 @@ fn ip_octet_to_string(ip: &[u8; 4]) -> String {
     ip.iter().map(|&i| i.to_string() + ".").collect()
 }
 
-pub struct SessionData {
+pub(crate) struct SessionData {
     socket_handle: SocketHandle,
     tcp_stream: TcpStream,
+    buffers: Buffers,
 }
 
 impl SessionData {
-    pub fn new(session: &Session, socket_handle: SocketHandle) -> SessionData {
+    pub fn new(session: &Session, socket_handle: SocketHandle, poll: &mut Poll, token: Token) -> SessionData {
         let mut tcp_stream = TcpStream::new();
         tcp_stream.connect(session.dst_ip, session.dst_port);
+        tcp_stream.register_poll(poll, token);
+
         SessionData {
             socket_handle,
             tcp_stream,
+            buffers: Buffers::new(),
         }
     }
 
@@ -106,5 +112,9 @@ impl SessionData {
 
     pub fn socket_handle(&mut self) -> SocketHandle {
         self.socket_handle
+    }
+
+    pub fn buffers(&mut self) -> &mut Buffers {
+        &mut self.buffers
     }
 }

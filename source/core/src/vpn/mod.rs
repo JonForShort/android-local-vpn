@@ -23,8 +23,10 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-mod channel;
-mod session_manager;
+mod buffers;
+mod processor;
+mod session;
+mod tcp_stream;
 mod tun;
 mod vpn_device;
 

@@ -23,7 +23,37 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-pub type Sender<T> = crossbeam::channel::Sender<T>;
-pub type Receiver<T> = crossbeam::channel::Receiver<T>;
-pub type TryRecvError = crossbeam::channel::TryRecvError;
-pub type Channel<T> = (Sender<T>, Receiver<T>);
+use super::processor::Processor;
+use mio::Waker;
+use std::thread::JoinHandle;
+
+pub struct Tun {
+    file_descriptor: i32,
+    stop_waker: Option<Waker>,
+    thread_join_handle: Option<JoinHandle<()>>,
+}
+
+impl Tun {
+    pub fn new(file_descriptor: i32) -> Tun {
+        Tun {
+            file_descriptor,
+            stop_waker: None,
+            thread_join_handle: None,
+        }
+    }
+
+    pub fn start(&mut self) {
+        log::trace!("starting");
+        let mut processor = Processor::new(self.file_descriptor);
+        self.stop_waker = Some(processor.new_stop_waker());
+        self.thread_join_handle = Some(std::thread::spawn(move || processor.run()));
+        log::trace!("started");
+    }
+
+    pub fn stop(&mut self) {
+        log::trace!("stopping");
+        self.stop_waker.as_ref().unwrap().wake().unwrap();
+        self.thread_join_handle.take().unwrap().join().unwrap();
+        log::trace!("stopped");
+    }
+}
