@@ -52,18 +52,20 @@ pub mod tun {
     }
 
     pub fn destroy() {
-        log::trace!("dstroy, pid={}", process::id());
+        log::trace!("destroy, pid={}", process::id());
     }
 
     pub fn start(file_descriptor: i32) {
         log::trace!("start, pid={}, fd={}", process::id(), file_descriptor);
         update_vpn(file_descriptor);
         vpn!().start();
+        log::trace!("started, pid={}, fd={}", process::id(), file_descriptor);
     }
 
     pub fn stop() {
         log::trace!("stop, pid={}", process::id());
         vpn!().stop();
+        log::trace!("stopped, pid={}", process::id());
     }
 
     fn update_vpn(file_descriptor: i32) {

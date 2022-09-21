@@ -27,7 +27,6 @@ mod buffers;
 mod processor;
 mod session;
 mod tcp_stream;
-mod tun;
 mod vpn_device;
 
 pub mod vpn;

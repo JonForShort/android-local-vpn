@@ -23,35 +23,36 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-extern crate log;
-
-use super::tun::Tun;
+use super::processor::Processor;
+use mio::Waker;
+use std::thread::JoinHandle;
 
 pub struct Vpn {
     file_descriptor: i32,
-    tun: Tun,
+    stop_waker: Option<Waker>,
+    thread_join_handle: Option<JoinHandle<()>>,
 }
 
 impl Vpn {
     pub fn new(file_descriptor: i32) -> Self {
         Self {
             file_descriptor,
-            tun: Tun::new(file_descriptor),
+            stop_waker: None,
+            thread_join_handle: None,
         }
     }
 
     pub fn start(&mut self) {
-        log::trace!("starting native vpn");
-        self.tun.start();
-        log::trace!("started native vpn");
+        let mut processor = Processor::new(self.file_descriptor);
+        self.stop_waker = Some(processor.new_stop_waker());
+        self.thread_join_handle = Some(std::thread::spawn(move || processor.run()));
     }
 
     pub fn stop(&mut self) {
-        log::trace!("stopping native vpn");
-        self.tun.stop();
+        self.stop_waker.as_ref().unwrap().wake().unwrap();
+        self.thread_join_handle.take().unwrap().join().unwrap();
         unsafe {
             libc::close(self.file_descriptor);
         }
-        log::trace!("stopped native vpn");
     }
 }
