@@ -31,24 +31,24 @@ use smoltcp::Result;
 use std::collections::VecDeque;
 
 #[derive(Debug)]
-pub struct VpnDevice {
+pub(crate) struct VpnDevice {
     rx_queue: VecDeque<Vec<u8>>,
     tx_queue: VecDeque<Vec<u8>>,
 }
 
 impl<'a> VpnDevice {
-    pub fn new() -> VpnDevice {
+    pub(crate) fn new() -> VpnDevice {
         VpnDevice {
             rx_queue: VecDeque::new(),
             tx_queue: VecDeque::new(),
         }
     }
 
-    pub fn receive(&mut self, bytes: Vec<u8>) {
+    pub(crate) fn receive(&mut self, bytes: Vec<u8>) {
         self.rx_queue.push_back(bytes);
     }
 
-    pub fn transmit(&mut self) -> Option<Vec<u8>> {
+    pub(crate) fn transmit(&mut self) -> Option<Vec<u8>> {
         self.tx_queue.pop_front()
     }
 }
@@ -81,7 +81,7 @@ impl<'a> Device<'a> for VpnDevice {
     }
 }
 
-pub struct RxToken {
+pub(crate) struct RxToken {
     buffer: Vec<u8>,
 }
 
@@ -94,7 +94,7 @@ impl<'a> phy::RxToken for RxToken {
     }
 }
 
-pub struct TxToken<'a> {
+pub(crate) struct TxToken<'a> {
     queue: &'a mut VecDeque<Vec<u8>>,
 }
 

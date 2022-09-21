@@ -28,7 +28,7 @@ use super::buffers::IncomingDirection;
 use super::buffers::OutgoingDirection;
 use super::session::Session;
 use super::session::SessionData;
-use crate::smoltcp_ext::wire::log_packet;
+use super::utils::log_packet;
 use crate::vpn::vpn_device::VpnDevice;
 use mio::event::Event;
 use mio::unix::SourceFd;
@@ -53,7 +53,7 @@ const TOKEN_TUN: Token = Token(0);
 const TOKEN_WAKER: Token = Token(1);
 const TOKEN_START_ID: usize = 2;
 
-pub struct Processor<'a> {
+pub(crate) struct Processor<'a> {
     file_descriptor: i32,
     file: File,
     poll: Poll,
@@ -64,7 +64,7 @@ pub struct Processor<'a> {
 }
 
 impl<'a> Processor<'a> {
-    pub fn new(file_descriptor: i32) -> Processor<'a> {
+    pub(crate) fn new(file_descriptor: i32) -> Processor<'a> {
         Processor {
             file_descriptor,
             file: unsafe { File::from_raw_fd(file_descriptor) },
@@ -76,11 +76,11 @@ impl<'a> Processor<'a> {
         }
     }
 
-    pub fn new_stop_waker(&self) -> Waker {
+    pub(crate) fn new_stop_waker(&self) -> Waker {
         Waker::new(self.poll.registry(), TOKEN_WAKER).unwrap()
     }
 
-    pub fn run(&mut self) {
+    pub(crate) fn run(&mut self) {
         let registry = self.poll.registry();
         registry
             .register(
@@ -212,13 +212,13 @@ impl<'a> Processor<'a> {
 
     fn read_from_server(&mut self, session: &Session) {
         let session_data = &mut self.sessions.get_mut(session).unwrap();
-        match session_data.tcp_stream().read() {
+        match session_data.tcp_stream.read() {
             Ok(bytes) => {
                 let event = IncomingDataEvent {
                     direction: IncomingDirection::FromServer,
                     buffer: &bytes[..],
                 };
-                session_data.buffers().push_data(event);
+                session_data.buffers.push_data(event);
             }
             Err(error) => {
                 log::error!("failed to read from tcp stream, errro={:?}", error);
@@ -229,14 +229,14 @@ impl<'a> Processor<'a> {
     fn write_to_server(&mut self, session: &Session) {
         let session_data = self.sessions.get_mut(session).unwrap();
         let buffer = session_data
-            .buffers()
+            .buffers
             .peek_data(OutgoingDirection::ToServer)
             .buffer
             .to_vec();
-        match session_data.tcp_stream().write(&buffer[..]) {
+        match session_data.tcp_stream.write(&buffer[..]) {
             Ok(consumed) => {
                 session_data
-                    .buffers()
+                    .buffers
                     .consume_data(OutgoingDirection::ToServer, consumed);
             }
             Err(error) => {
@@ -253,14 +253,14 @@ impl<'a> Processor<'a> {
         let session_data = &mut self.sessions.get_mut(session).unwrap();
         let tcp_socket = self
             .interface
-            .get_socket::<TcpSocket>(session_data.socket_handle());
+            .get_socket::<TcpSocket>(session_data.socket_handle);
         while tcp_socket.can_recv() {
             let result = tcp_socket.recv(|data| {
                 let event = IncomingDataEvent {
                     direction: IncomingDirection::FromClient,
                     buffer: data,
                 };
-                session_data.buffers().push_data(event);
+                session_data.buffers.push_data(event);
                 (data.len(), (data))
             });
             if let Err(error) = result {
@@ -274,15 +274,13 @@ impl<'a> Processor<'a> {
         let session_data = self.sessions.get_mut(session).unwrap();
         let tcp_socket = self
             .interface
-            .get_socket::<TcpSocket>(session_data.socket_handle());
+            .get_socket::<TcpSocket>(session_data.socket_handle);
         if tcp_socket.may_send() {
-            let event = session_data
-                .buffers()
-                .peek_data(OutgoingDirection::ToClient);
+            let event = session_data.buffers.peek_data(OutgoingDirection::ToClient);
             match tcp_socket.send_slice(event.buffer) {
                 Ok(consumed) => {
                     session_data
-                        .buffers()
+                        .buffers
                         .consume_data(OutgoingDirection::ToClient, consumed);
                 }
                 Err(error) => {

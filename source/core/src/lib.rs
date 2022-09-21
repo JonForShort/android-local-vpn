@@ -26,7 +26,6 @@
 #[macro_use]
 extern crate lazy_static;
 
-mod smoltcp_ext;
 mod vpn;
 
 pub mod tun {

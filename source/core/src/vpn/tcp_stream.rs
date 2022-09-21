@@ -36,11 +36,11 @@ pub(crate) struct TcpStream {
 }
 
 impl TcpStream {
-    pub fn new() -> TcpStream {
+    pub(crate) fn new() -> TcpStream {
         TcpStream { socket: None }
     }
 
-    pub fn connect(&mut self, ip: [u8; 4], port: u16) {
+    pub(crate) fn connect(&mut self, ip: [u8; 4], port: u16) {
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
         on_socket_created(socket.as_raw_fd());
@@ -67,7 +67,7 @@ impl TcpStream {
         self.socket = Some(socket);
     }
 
-    pub fn register_poll(&self, poll: &mut Poll, token: Token) {
+    pub(crate) fn register_poll(&self, poll: &mut Poll, token: Token) {
         let raw_fd = &self.socket.as_ref().unwrap().as_raw_fd();
         poll.registry()
             .register(
@@ -78,11 +78,11 @@ impl TcpStream {
             .unwrap()
     }
 
-    pub fn write(&mut self, bytes: &[u8]) -> Result<usize> {
+    pub(crate) fn write(&mut self, bytes: &[u8]) -> Result<usize> {
         self.socket.as_ref().unwrap().send(bytes)
     }
 
-    pub fn read(&mut self) -> Result<Vec<u8>> {
+    pub(crate) fn read(&mut self) -> Result<Vec<u8>> {
         let mut bytes: Vec<u8> = Vec::new();
         let mut read_buffer = [0; 1024];
         if let Some(socket) = &mut self.socket {

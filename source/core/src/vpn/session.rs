@@ -33,15 +33,15 @@ use std::hash::Hash;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub(crate) struct Session {
-    pub src_ip: [u8; 4],
-    pub src_port: u16,
-    pub dst_ip: [u8; 4],
-    pub dst_port: u16,
-    pub protocol: u8,
+    pub(crate) src_ip: [u8; 4],
+    pub(crate) src_port: u16,
+    pub(crate) dst_ip: [u8; 4],
+    pub(crate) dst_port: u16,
+    pub(crate) protocol: u8,
 }
 
 impl Session {
-    pub fn new(bytes: &Vec<u8>) -> Option<Session> {
+    pub(crate) fn new(bytes: &Vec<u8>) -> Option<Session> {
         match Ipv4Packet::new_checked(&bytes) {
             Ok(ip_packet) => {
                 if ip_packet.protocol() == IpProtocol::Tcp {
@@ -88,13 +88,13 @@ fn ip_octet_to_string(ip: &[u8; 4]) -> String {
 }
 
 pub(crate) struct SessionData {
-    socket_handle: SocketHandle,
-    tcp_stream: TcpStream,
-    buffers: Buffers,
+    pub(crate) socket_handle: SocketHandle,
+    pub(crate) tcp_stream: TcpStream,
+    pub(crate) buffers: Buffers,
 }
 
 impl SessionData {
-    pub fn new(session: &Session, socket_handle: SocketHandle, poll: &mut Poll, token: Token) -> SessionData {
+    pub(crate) fn new(session: &Session, socket_handle: SocketHandle, poll: &mut Poll, token: Token) -> SessionData {
         let mut tcp_stream = TcpStream::new();
         tcp_stream.connect(session.dst_ip, session.dst_port);
         tcp_stream.register_poll(poll, token);
@@ -104,17 +104,5 @@ impl SessionData {
             tcp_stream,
             buffers: Buffers::new(),
         }
-    }
-
-    pub fn tcp_stream(&mut self) -> &mut TcpStream {
-        &mut self.tcp_stream
-    }
-
-    pub fn socket_handle(&mut self) -> SocketHandle {
-        self.socket_handle
-    }
-
-    pub fn buffers(&mut self) -> &mut Buffers {
-        &mut self.buffers
     }
 }

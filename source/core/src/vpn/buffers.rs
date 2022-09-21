@@ -31,14 +31,14 @@ pub(crate) struct Buffers {
 }
 
 impl Buffers {
-    pub fn new() -> Buffers {
+    pub(crate) fn new() -> Buffers {
         Buffers {
             client: Default::default(),
             server: Default::default(),
         }
     }
 
-    pub fn peek_data(&mut self, direction: OutgoingDirection) -> OutgoingDataEvent {
+    pub(crate) fn peek_data(&mut self, direction: OutgoingDirection) -> OutgoingDataEvent {
         let buffer = match direction {
             OutgoingDirection::ToServer => &mut self.server,
             OutgoingDirection::ToClient => &mut self.client,
@@ -49,7 +49,7 @@ impl Buffers {
         }
     }
 
-    pub fn consume_data(&mut self, direction: OutgoingDirection, size: usize) {
+    pub(crate) fn consume_data(&mut self, direction: OutgoingDirection, size: usize) {
         let buffer = match direction {
             OutgoingDirection::ToServer => &mut self.server,
             OutgoingDirection::ToClient => &mut self.client,
@@ -57,7 +57,7 @@ impl Buffers {
         buffer.drain(0..size);
     }
 
-    pub fn push_data(&mut self, event: IncomingDataEvent<'_>) {
+    pub(crate) fn push_data(&mut self, event: IncomingDataEvent<'_>) {
         let direction = event.direction;
         let buffer = event.buffer;
         match direction {
