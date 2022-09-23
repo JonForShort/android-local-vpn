@@ -90,6 +90,7 @@ fn ip_octet_to_string(ip: &[u8; 4]) -> String {
 pub(crate) struct SessionData {
     pub(crate) socket_handle: SocketHandle,
     pub(crate) tcp_stream: TcpStream,
+    pub(crate) token: Token,
     pub(crate) buffers: Buffers,
 }
 
@@ -102,6 +103,7 @@ impl SessionData {
         SessionData {
             socket_handle,
             tcp_stream,
+            token,
             buffers: Buffers::new(),
         }
     }

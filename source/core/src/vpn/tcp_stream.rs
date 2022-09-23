@@ -78,6 +78,11 @@ impl TcpStream {
             .unwrap()
     }
 
+    pub(crate) fn deregister_poll(&self, poll: &mut Poll) {
+        let raw_fd = &self.socket.as_ref().unwrap().as_raw_fd();
+        poll.registry().deregister(&mut SourceFd(raw_fd)).unwrap()
+    }
+
     pub(crate) fn write(&mut self, bytes: &[u8]) -> Result<usize> {
         self.socket.as_ref().unwrap().send(bytes)
     }

@@ -34,7 +34,7 @@ use mio::event::Event;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token, Waker};
 use smoltcp::iface::{Interface, InterfaceBuilder, Routes};
-use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
+use smoltcp::socket::{TcpSocket, TcpSocketBuffer, TcpState};
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint, Ipv4Address};
 use std::collections::btree_map::BTreeMap;
@@ -137,7 +137,7 @@ impl<'a> Processor<'a> {
         Some(socket)
     }
 
-    fn build_session(&mut self, bytes: &Vec<u8>) -> Option<Session> {
+    fn create_session(&mut self, bytes: &Vec<u8>) -> Option<Session> {
         if let Some(session) = Session::new(bytes) {
             self.sessions.entry(session).or_insert_with_key(|session| {
                 let socket = Processor::create_socket(session).unwrap();
@@ -156,6 +156,24 @@ impl<'a> Processor<'a> {
         }
     }
 
+    fn destroy_session(&mut self, session: Session) {
+        if let Some(session_data) = self.sessions.get(&session) {
+            log::trace!("destroying session, session={:?}", session);
+
+            let socket = self
+                .interface
+                .get_socket::<TcpSocket>(session_data.socket_handle);
+            socket.close();
+
+            session_data.tcp_stream.deregister_poll(&mut self.poll);
+
+            self.tokens_to_sessions.remove(&session_data.token);
+            self.sessions.remove(&session);
+
+            self.write_to_tun();
+        }
+    }
+
     fn handle_tun_event(&mut self, event: &Event) {
         if event.is_readable() {
             let mut buffer: [u8; 65535] = [0; 65535];
@@ -168,7 +186,7 @@ impl<'a> Processor<'a> {
                         let read_buffer = buffer[..count].to_vec();
                         log_packet("out", &read_buffer);
 
-                        if let Some(session) = self.build_session(&read_buffer) {
+                        if let Some(session) = self.create_session(&read_buffer) {
                             self.interface.device_mut().receive(read_buffer);
 
                             self.write_to_tun();
@@ -198,93 +216,115 @@ impl<'a> Processor<'a> {
     }
 
     fn handle_server_event(&mut self, event: &Event) {
-        let session = *self.tokens_to_sessions.get(&event.token()).unwrap();
-        if event.is_readable() {
-            self.read_from_server(&session);
-            self.write_to_mio(&session);
-            self.write_to_tun();
-        }
-        if event.is_writable() {
-            self.read_from_mio(&session);
-            self.write_to_server(&session);
+        if let Some(session) = self.tokens_to_sessions.get(&event.token()) {
+            let session = *session;
+            if event.is_readable() {
+                self.read_from_server(&session);
+                self.write_to_mio(&session);
+                self.write_to_tun();
+            }
+            if event.is_writable() {
+                self.read_from_mio(&session);
+                self.write_to_server(&session);
+            }
         }
     }
 
     fn read_from_server(&mut self, session: &Session) {
-        let session_data = &mut self.sessions.get_mut(session).unwrap();
-        match session_data.tcp_stream.read() {
-            Ok(bytes) => {
-                let event = IncomingDataEvent {
-                    direction: IncomingDirection::FromServer,
-                    buffer: &bytes[..],
-                };
-                session_data.buffers.push_data(event);
-            }
-            Err(error) => {
-                log::error!("failed to read from tcp stream, errro={:?}", error);
+        if let Some(session_data) = self.sessions.get_mut(session) {
+            let is_session_closed = match session_data.tcp_stream.read() {
+                Ok(bytes) => {
+                    if bytes.len() > 0 {
+                        let event = IncomingDataEvent {
+                            direction: IncomingDirection::FromServer,
+                            buffer: &bytes[..],
+                        };
+                        session_data.buffers.push_data(event);
+                        false
+                    } else {
+                        true
+                    }
+                }
+                Err(error) => {
+                    if error.kind() == std::io::ErrorKind::WouldBlock {
+                        false
+                    } else {
+                        log::error!("failed to read from tcp stream, errro={:?}", error);
+                        true
+                    }
+                }
+            };
+            if is_session_closed {
+                self.destroy_session(session.clone());
             }
         }
     }
 
     fn write_to_server(&mut self, session: &Session) {
-        let session_data = self.sessions.get_mut(session).unwrap();
-        let buffer = session_data
-            .buffers
-            .peek_data(OutgoingDirection::ToServer)
-            .buffer
-            .to_vec();
-        match session_data.tcp_stream.write(&buffer[..]) {
-            Ok(consumed) => {
-                session_data
-                    .buffers
-                    .consume_data(OutgoingDirection::ToServer, consumed);
-            }
-            Err(error) => {
-                if error.kind() == std::io::ErrorKind::WouldBlock {
-                    // do nothing.
-                } else {
-                    log::error!("failed to to server, error={:?}", error);
+        if let Some(session_data) = self.sessions.get_mut(session) {
+            let buffer = session_data
+                .buffers
+                .peek_data(OutgoingDirection::ToServer)
+                .buffer
+                .to_vec();
+            match session_data.tcp_stream.write(&buffer[..]) {
+                Ok(consumed) => {
+                    session_data
+                        .buffers
+                        .consume_data(OutgoingDirection::ToServer, consumed);
+                }
+                Err(error) => {
+                    if error.kind() == std::io::ErrorKind::WouldBlock {
+                        // do nothing.
+                    } else {
+                        log::error!("failed to to server, error={:?}", error);
+                    }
                 }
             }
         }
     }
 
     fn read_from_mio(&mut self, session: &Session) {
-        let session_data = &mut self.sessions.get_mut(session).unwrap();
-        let tcp_socket = self
-            .interface
-            .get_socket::<TcpSocket>(session_data.socket_handle);
-        while tcp_socket.can_recv() {
-            let result = tcp_socket.recv(|data| {
-                let event = IncomingDataEvent {
-                    direction: IncomingDirection::FromClient,
-                    buffer: data,
-                };
-                session_data.buffers.push_data(event);
-                (data.len(), (data))
-            });
-            if let Err(error) = result {
-                log::error!("failed to receive from tcp socket, error={:?}", error);
-                break;
+        if let Some(session_data) = self.sessions.get_mut(session) {
+            let tcp_socket = self
+                .interface
+                .get_socket::<TcpSocket>(session_data.socket_handle);
+            while tcp_socket.can_recv() {
+                let result = tcp_socket.recv(|data| {
+                    let event = IncomingDataEvent {
+                        direction: IncomingDirection::FromClient,
+                        buffer: data,
+                    };
+                    session_data.buffers.push_data(event);
+                    (data.len(), (data))
+                });
+                if let Err(error) = result {
+                    log::error!("failed to receive from tcp socket, error={:?}", error);
+                    break;
+                }
+            }
+            if tcp_socket.state() == TcpState::CloseWait {
+                self.destroy_session(session.clone());
             }
         }
     }
 
     fn write_to_mio(&mut self, session: &Session) {
-        let session_data = self.sessions.get_mut(session).unwrap();
-        let tcp_socket = self
-            .interface
-            .get_socket::<TcpSocket>(session_data.socket_handle);
-        if tcp_socket.may_send() {
-            let event = session_data.buffers.peek_data(OutgoingDirection::ToClient);
-            match tcp_socket.send_slice(event.buffer) {
-                Ok(consumed) => {
-                    session_data
-                        .buffers
-                        .consume_data(OutgoingDirection::ToClient, consumed);
-                }
-                Err(error) => {
-                    log::error!("failed to write to client, error={:?}", error);
+        if let Some(session_data) = self.sessions.get_mut(session) {
+            let tcp_socket = self
+                .interface
+                .get_socket::<TcpSocket>(session_data.socket_handle);
+            if tcp_socket.may_send() {
+                let event = session_data.buffers.peek_data(OutgoingDirection::ToClient);
+                match tcp_socket.send_slice(event.buffer) {
+                    Ok(consumed) => {
+                        session_data
+                            .buffers
+                            .consume_data(OutgoingDirection::ToClient, consumed);
+                    }
+                    Err(error) => {
+                        log::error!("failed to write to client, error={:?}", error);
+                    }
                 }
             }
         }
