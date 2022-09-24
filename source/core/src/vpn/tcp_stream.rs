@@ -24,20 +24,24 @@
 // For more information, please refer to <https://unlicense.org>
 
 use crate::tun_callbacks::on_socket_created;
-use mio::unix::SourceFd;
+use mio::net::TcpStream as MioTcpStream;
 use mio::{Interest, Poll, Token};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
-use std::io::{ErrorKind, Read, Result};
-use std::net::SocketAddr;
-use std::os::unix::io::AsRawFd;
+use std::io::{ErrorKind, Read, Result, Write};
+use std::net::{Shutdown, SocketAddr};
+use std::os::unix::io::{AsRawFd, FromRawFd};
 
 pub(crate) struct TcpStream {
     socket: Option<Socket>,
+    tcp_stream: Option<MioTcpStream>,
 }
 
 impl TcpStream {
     pub(crate) fn new() -> TcpStream {
-        TcpStream { socket: None }
+        TcpStream {
+            socket: None,
+            tcp_stream: None,
+        }
     }
 
     pub(crate) fn connect(&mut self, ip: [u8; 4], port: u16) {
@@ -64,41 +68,45 @@ impl TcpStream {
 
         socket.set_nonblocking(true).unwrap();
 
+        let tcp_stream = unsafe { MioTcpStream::from_raw_fd(socket.as_raw_fd()) };
+
         self.socket = Some(socket);
+        self.tcp_stream = Some(tcp_stream);
     }
 
-    pub(crate) fn register_poll(&self, poll: &mut Poll, token: Token) {
-        let raw_fd = &self.socket.as_ref().unwrap().as_raw_fd();
+    pub(crate) fn register_poll(&mut self, poll: &mut Poll, token: Token) {
         poll.registry()
             .register(
-                &mut SourceFd(raw_fd),
+                self.tcp_stream.as_mut().unwrap(),
                 token,
                 Interest::READABLE | Interest::WRITABLE,
             )
             .unwrap()
     }
 
-    pub(crate) fn deregister_poll(&self, poll: &mut Poll) {
-        let raw_fd = &self.socket.as_ref().unwrap().as_raw_fd();
-        poll.registry().deregister(&mut SourceFd(raw_fd)).unwrap()
+    pub(crate) fn deregister_poll(&mut self, poll: &mut Poll) {
+        poll.registry()
+            .deregister(self.tcp_stream.as_mut().unwrap())
+            .unwrap()
     }
 
     pub(crate) fn write(&mut self, bytes: &[u8]) -> Result<usize> {
-        self.socket.as_ref().unwrap().send(bytes)
+        self.tcp_stream.as_ref().unwrap().write(bytes)
     }
 
-    pub(crate) fn read(&mut self) -> Result<Vec<u8>> {
+    pub(crate) fn read(&mut self) -> Result<(Vec<u8>, bool)> {
         let mut bytes: Vec<u8> = Vec::new();
-        let mut read_buffer = [0; 1024];
-        if let Some(socket) = &mut self.socket {
+        let mut buffer = [0; 1024];
+        let mut is_closed = false;
+        if let Some(tcp_stream) = &mut self.tcp_stream {
             loop {
-                let result = socket.read(&mut read_buffer[..]);
-                match result {
-                    Ok(read_bytes) => {
-                        if read_bytes == 0 {
+                match tcp_stream.read(&mut buffer[..]) {
+                    Ok(count) => {
+                        if count == 0 {
+                            is_closed = true;
                             break;
                         }
-                        bytes.extend_from_slice(&read_buffer[..read_bytes]);
+                        bytes.extend_from_slice(&buffer[..count]);
                     }
                     Err(error_code) => {
                         if error_code.kind() == ErrorKind::WouldBlock {
@@ -110,6 +118,14 @@ impl TcpStream {
                 }
             }
         }
-        Ok(bytes)
+        Ok((bytes, is_closed))
+    }
+
+    pub(crate) fn close(&self) {
+        self.tcp_stream
+            .as_ref()
+            .unwrap()
+            .shutdown(Shutdown::Both)
+            .unwrap();
     }
 }

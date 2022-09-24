@@ -157,7 +157,7 @@ impl<'a> Processor<'a> {
     }
 
     fn destroy_session(&mut self, session: Session) {
-        if let Some(session_data) = self.sessions.get(&session) {
+        if let Some(session_data) = self.sessions.get_mut(&session) {
             log::trace!("destroying session, session={:?}", session);
 
             let socket = self
@@ -165,7 +165,9 @@ impl<'a> Processor<'a> {
                 .get_socket::<TcpSocket>(session_data.socket_handle);
             socket.close();
 
-            session_data.tcp_stream.deregister_poll(&mut self.poll);
+            let tcp_stream = &mut session_data.tcp_stream;
+            tcp_stream.close();
+            tcp_stream.deregister_poll(&mut self.poll);
 
             self.tokens_to_sessions.remove(&session_data.token);
             self.sessions.remove(&session);
@@ -233,17 +235,13 @@ impl<'a> Processor<'a> {
     fn read_from_server(&mut self, session: &Session) {
         if let Some(session_data) = self.sessions.get_mut(session) {
             let is_session_closed = match session_data.tcp_stream.read() {
-                Ok(bytes) => {
-                    if bytes.len() > 0 {
-                        let event = IncomingDataEvent {
-                            direction: IncomingDirection::FromServer,
-                            buffer: &bytes[..],
-                        };
-                        session_data.buffers.push_data(event);
-                        false
-                    } else {
-                        true
-                    }
+                Ok((bytes, is_closed)) => {
+                    let event = IncomingDataEvent {
+                        direction: IncomingDirection::FromServer,
+                        buffer: &bytes[..],
+                    };
+                    session_data.buffers.push_data(event);
+                    is_closed
                 }
                 Err(error) => {
                     if error.kind() == std::io::ErrorKind::WouldBlock {
