@@ -51,11 +51,11 @@ impl TcpStream {
 
         let address = SockAddr::from(SocketAddr::from((ip, port)));
 
-        log::trace!("connecting to host, address={:?}", address);
+        log::debug!("connecting to host, address={:?}", address);
 
         match socket.connect(&address) {
             Ok(_) => {
-                log::trace!("connected to host, address={:?}", address);
+                log::debug!("connected to host, address={:?}", address);
             }
             Err(error) => {
                 log::error!(
@@ -122,10 +122,9 @@ impl TcpStream {
     }
 
     pub(crate) fn close(&self) {
-        self.tcp_stream
-            .as_ref()
-            .unwrap()
-            .shutdown(Shutdown::Both)
-            .unwrap();
+        let tcp_stream = self.tcp_stream.as_ref().unwrap();
+        if let Err(error) = tcp_stream.shutdown(Shutdown::Both) {
+            log::trace!("failed to shutdown tcp stream, error={:?}", error);
+        }
     }
 }

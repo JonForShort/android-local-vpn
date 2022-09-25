@@ -93,7 +93,10 @@ impl<'a> Processor<'a> {
         let mut events = Events::with_capacity(EVENTS_CAPACITY);
 
         'poll_loop: loop {
-            self.poll.poll(&mut events, None).unwrap();
+            let _ = self.poll.poll(&mut events, None);
+
+            log::trace!("handling events, count={:?}", events.iter().count());
+
             for event in events.iter() {
                 if event.token() == TOKEN_TUN {
                     self.handle_tun_event(event);
@@ -103,6 +106,8 @@ impl<'a> Processor<'a> {
                     self.handle_server_event(event);
                 }
             }
+
+            log::trace!("finished handling events");
         }
     }
 
@@ -140,6 +145,8 @@ impl<'a> Processor<'a> {
     fn create_session(&mut self, bytes: &Vec<u8>) -> Option<Session> {
         if let Some(session) = Session::new(bytes) {
             self.sessions.entry(session).or_insert_with_key(|session| {
+                log::debug!("creating session, session={:?}", session);
+
                 let socket = Processor::create_socket(session).unwrap();
                 let socket_handle = self.interface.add_socket(socket);
 
@@ -157,9 +164,13 @@ impl<'a> Processor<'a> {
     }
 
     fn destroy_session(&mut self, session: Session) {
-        if let Some(session_data) = self.sessions.get_mut(&session) {
-            log::trace!("destroying session, session={:?}", session);
+        log::trace!("destroying session, session={:?}", session);
 
+        // push any pending data back to tun device before destroying session.
+        self.write_to_mio(&session);
+        self.write_to_tun();
+
+        if let Some(session_data) = self.sessions.get_mut(&session) {
             let socket = self
                 .interface
                 .get_socket::<TcpSocket>(session_data.socket_handle);
@@ -170,14 +181,17 @@ impl<'a> Processor<'a> {
             tcp_stream.deregister_poll(&mut self.poll);
 
             self.tokens_to_sessions.remove(&session_data.token);
-            self.sessions.remove(&session);
 
-            self.write_to_tun();
+            self.sessions.remove(&session);
         }
+
+        log::trace!("finished destroying session, session={:?}", session);
     }
 
     fn handle_tun_event(&mut self, event: &Event) {
         if event.is_readable() {
+            log::trace!("handle tun event");
+
             let mut buffer: [u8; 65535] = [0; 65535];
             loop {
                 match self.file.read(&mut buffer) {
@@ -206,41 +220,59 @@ impl<'a> Processor<'a> {
                     }
                 }
             }
+
+            log::trace!("finished handle tun event");
         }
     }
 
     fn write_to_tun(&mut self) {
+        log::trace!("write to tun");
+
         self.interface.poll(Instant::now()).unwrap();
         while let Some(bytes) = self.interface.device_mut().transmit() {
             log_packet("in", &bytes);
             self.file.write_all(&bytes[..]).unwrap();
         }
+
+        log::trace!("finished write to tun");
     }
 
     fn handle_server_event(&mut self, event: &Event) {
         if let Some(session) = self.tokens_to_sessions.get(&event.token()) {
             let session = *session;
             if event.is_readable() {
+                log::trace!("handle server event read, session={:?}", session);
+
                 self.read_from_server(&session);
                 self.write_to_mio(&session);
                 self.write_to_tun();
+
+                log::trace!("finished handle server event read, session={:?}", session);
             }
             if event.is_writable() {
+                log::trace!("handle server event write, session={:?}", session);
+
                 self.read_from_mio(&session);
                 self.write_to_server(&session);
+
+                log::trace!("finished handle server event write, session={:?}", session);
             }
         }
     }
 
     fn read_from_server(&mut self, session: &Session) {
         if let Some(session_data) = self.sessions.get_mut(session) {
+            log::trace!("read from server, session={:?}", session);
+
             let is_session_closed = match session_data.tcp_stream.read() {
                 Ok((bytes, is_closed)) => {
-                    let event = IncomingDataEvent {
-                        direction: IncomingDirection::FromServer,
-                        buffer: &bytes[..],
-                    };
-                    session_data.buffers.push_data(event);
+                    if bytes.len() > 0 {
+                        let event = IncomingDataEvent {
+                            direction: IncomingDirection::FromServer,
+                            buffer: &bytes[..],
+                        };
+                        session_data.buffers.push_data(event);
+                    }
                     is_closed
                 }
                 Err(error) => {
@@ -255,11 +287,15 @@ impl<'a> Processor<'a> {
             if is_session_closed {
                 self.destroy_session(session.clone());
             }
+
+            log::trace!("finished read from server, session={:?}", session);
         }
     }
 
     fn write_to_server(&mut self, session: &Session) {
         if let Some(session_data) = self.sessions.get_mut(session) {
+            log::trace!("write to server, session={:?}", session);
+
             let buffer = session_data
                 .buffers
                 .peek_data(OutgoingDirection::ToServer)
@@ -279,11 +315,15 @@ impl<'a> Processor<'a> {
                     }
                 }
             }
+
+            log::trace!("finished write to server, session={:?}", session);
         }
     }
 
     fn read_from_mio(&mut self, session: &Session) {
         if let Some(session_data) = self.sessions.get_mut(session) {
+            log::trace!("read from mio, session={:?}", session);
+
             let tcp_socket = self
                 .interface
                 .get_socket::<TcpSocket>(session_data.socket_handle);
@@ -304,11 +344,15 @@ impl<'a> Processor<'a> {
             if tcp_socket.state() == TcpState::CloseWait {
                 self.destroy_session(session.clone());
             }
+
+            log::trace!("finished read from mio, session={:?}", session);
         }
     }
 
     fn write_to_mio(&mut self, session: &Session) {
         if let Some(session_data) = self.sessions.get_mut(session) {
+            log::trace!("write to mio, session={:?}", session);
+
             let tcp_socket = self
                 .interface
                 .get_socket::<TcpSocket>(session_data.socket_handle);
@@ -325,6 +369,8 @@ impl<'a> Processor<'a> {
                     }
                 }
             }
+
+            log::trace!("finished write to mio, session={:?}", session);
         }
     }
 }

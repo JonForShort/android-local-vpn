@@ -34,7 +34,7 @@ pub fn log_packet(message: &str, bytes: &Vec<u8>) {
             if ip_packet.protocol() == IpProtocol::Tcp {
                 let tcp_bytes = ip_packet.payload();
                 let tcp_packet = TcpPacket::new_checked(tcp_bytes).unwrap();
-                log::trace!(
+                log::debug!(
                     "[{:?}] len={:?} tcp=[{}] tcp_len={:?} ip=[{}]",
                     message,
                     bytes.len(),
@@ -43,11 +43,11 @@ pub fn log_packet(message: &str, bytes: &Vec<u8>) {
                     ip_packet
                 );
             } else {
-                log::trace!("[{:?}] len={:?} ip=[{}]", message, bytes.len(), ip_packet);
+                log::debug!("[{:?}] len={:?} ip=[{}]", message, bytes.len(), ip_packet);
             }
         }
         Err(error) => {
-            log::trace!("[{:?}] failed to log packet, error={:?}", message, error);
+            log::error!("[{:?}] failed to log packet, error={:?}", message, error);
         }
     }
 }
