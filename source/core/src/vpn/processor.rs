@@ -174,7 +174,7 @@ impl<'a> Processor<'a> {
             let socket = self
                 .interface
                 .get_socket::<TcpSocket>(session_data.socket_handle);
-            socket.close();
+            socket.abort();
 
             let tcp_stream = &mut session_data.tcp_stream;
             tcp_stream.close();
