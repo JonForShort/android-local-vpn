@@ -47,6 +47,8 @@ impl TcpStream {
     pub(crate) fn connect(&mut self, ip: [u8; 4], port: u16) {
         let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
+        socket.set_nonblocking(true).unwrap();
+
         on_socket_created(socket.as_raw_fd());
 
         let address = SockAddr::from(SocketAddr::from((ip, port)));
@@ -58,15 +60,17 @@ impl TcpStream {
                 log::debug!("connected to host, address={:?}", address);
             }
             Err(error) => {
-                log::error!(
-                    "failed to connect to host, error={:?} address={:?}",
-                    error,
-                    address
-                );
+                if error.kind() == ErrorKind::WouldBlock || error.raw_os_error() == Some(libc::EINPROGRESS) {
+                    // do nothing.
+                } else {
+                    log::error!(
+                        "failed to connect to host, error={:?} address={:?}",
+                        error,
+                        address
+                    );
+                }
             }
         }
-
-        socket.set_nonblocking(true).unwrap();
 
         let tcp_stream = unsafe { MioTcpStream::from_raw_fd(socket.as_raw_fd()) };
 

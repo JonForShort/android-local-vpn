@@ -308,7 +308,7 @@ impl<'a> Processor<'a> {
                         .consume_data(OutgoingDirection::ToServer, consumed);
                 }
                 Err(error) => {
-                    if error.kind() == std::io::ErrorKind::WouldBlock {
+                    if error.kind() == ErrorKind::WouldBlock {
                         // do nothing.
                     } else {
                         log::error!("failed to to server, error={:?}", error);
