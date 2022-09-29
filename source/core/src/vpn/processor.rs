@@ -257,6 +257,13 @@ impl<'a> Processor<'a> {
 
                 log::trace!("finished handle server event write, session={:?}", session);
             }
+            if event.is_read_closed() || event.is_write_closed() {
+                log::trace!("handle server event closed, session={:?}", session);
+
+                self.destroy_session(session);
+
+                log::trace!("finished handle server event closed, session={:?}", session);
+            }
         }
     }
 
@@ -276,8 +283,10 @@ impl<'a> Processor<'a> {
                     is_closed
                 }
                 Err(error) => {
-                    if error.kind() == std::io::ErrorKind::WouldBlock {
+                    if error.kind() == ErrorKind::WouldBlock {
                         false
+                    } else if error.kind() == ErrorKind::ConnectionReset {
+                        true
                     } else {
                         log::error!("failed to read from tcp stream, errro={:?}", error);
                         true
