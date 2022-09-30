@@ -4,6 +4,7 @@ buildscript {
             url "https://plugins.gradle.org/m2/"
         }
     }
+
     dependencies {
         classpath 'org.mozilla.rust-android-gradle:plugin:0.9.0'
     }
@@ -25,12 +26,14 @@ ext {
 }
 
 android {
-    compileSdk 32
+    namespace 'com.github.jonforshort.androidlocalvpn.vpn'
+
+    compileSdk 33
     ndkVersion "21.1.6352462"
 
     defaultConfig {
         minSdk 26
-        targetSdk 32
+        targetSdk 33
 
         versionCode = versionCode
         versionName = versionName
@@ -38,23 +41,26 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
     }
+
     buildTypes {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+
     kotlinOptions {
         jvmTarget = '1.8'
     }
 }
 
 dependencies {
-    implementation 'androidx.activity:activity-ktx:1.5.1'
+    implementation 'androidx.activity:activity-ktx:1.6.0'
     implementation 'com.jakewharton.timber:timber:4.7.1'
 }
 
