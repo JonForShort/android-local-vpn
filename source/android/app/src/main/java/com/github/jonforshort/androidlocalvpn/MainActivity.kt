@@ -53,6 +53,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.jsoup.Connection
 import org.jsoup.Jsoup
+import org.xbill.DNS.*
 import timber.log.Timber.d
 import timber.log.Timber.e
 import java.io.IOException
@@ -108,40 +109,51 @@ class MainActivity : LocalVpnActivity() {
 private fun TestTab() {
 
     Column {
-        TestButton(
+        TestHtmlQuery(
             text = "Google (HTTP)",
             url = "http://google.com/"
         )
 
-        TestButton(
+        TestHtmlQuery(
             text = "Google (HTTPS)",
             url = "https://google.com/"
         )
 
-        TestButton(
+        TestHtmlQuery(
             text = "HttpBin (HTTP)",
             url = "http://httpbin.org"
         )
 
-        TestButton(
+        TestHtmlQuery(
             text = "HttpBin (HTTPS)",
             url = "https://httpbin.org"
         )
 
-        TestButton(
+        TestHtmlQuery(
             text = "Kernel (HTTP)",
             url = "http://mirrors.edge.kernel.org/pub/site/README"
         )
 
-        TestButton(
+        TestHtmlQuery(
             text = "Kernel (HTTPS)",
             url = "https://mirrors.edge.kernel.org/pub/site/README"
+        )
+
+        TestDnsQuery(
+            text = "Google (DNS)",
+            domain = "google.com."
+        )
+
+        TestDnsQuery(
+            text = "Non-Existent Server (DNS)",
+            domain = "google.com.",
+            server = "172.0.0.1"
         )
     }
 }
 
 @Composable
-private fun TestButton(text: String, url: String) {
+private fun TestHtmlQuery(text: String, url: String) {
     val coroutineScope = rememberCoroutineScope()
 
     fun performJsoupRequest(onRequestStarted: () -> Unit, onRequestFinished: (Boolean) -> Unit) {
@@ -158,10 +170,11 @@ private fun TestButton(text: String, url: String) {
                 val duration = System.currentTimeMillis() - requestStartTime
 
                 d(
-                    """dumping html, count=[${html.length}] duration=[$duration]
-                    |$html
-                    |done dumping html
-                """.trimMargin()
+                    """
+                        |dumping html, count=[${html.length}] duration=[$duration]
+                        |$html
+                        |done dumping html
+                    """.trimMargin()
                 )
                 onRequestFinished(true)
             } catch (e: IOException) {
@@ -178,6 +191,68 @@ private fun TestButton(text: String, url: String) {
         colors = ButtonDefaults.buttonColors(backgroundColor = buttonColor.value),
         onClick = {
             performJsoupRequest(
+                onRequestStarted = {
+                    buttonColor.value = Color.LightGray
+                },
+                onRequestFinished = { isSuccessful ->
+                    if (isSuccessful) {
+                        buttonColor.value = Color.Green
+                    } else {
+                        buttonColor.value = Color.Red
+                    }
+                })
+        }
+    ) {
+        Text(text)
+    }
+}
+
+@Composable
+private fun TestDnsQuery(text: String, domain: String, server: String = "8.8.8.8") {
+    val coroutineScope = rememberCoroutineScope()
+
+    fun performDnsLookup(onRequestStarted: () -> Unit, onRequestFinished: (Boolean) -> Unit) {
+        coroutineScope.launch(Dispatchers.IO) {
+            val requestStartTime = System.currentTimeMillis()
+            onRequestStarted()
+
+            try {
+                val queryRecord = Record.newRecord(Name.fromString(domain), Type.A, DClass.IN)
+                val queryMessage = Message.newQuery(queryRecord)
+                SimpleResolver(server)
+                    .sendAsync(queryMessage)
+                    .whenComplete { answer, e ->
+                        if (e == null) {
+                            val duration = System.currentTimeMillis() - requestStartTime
+                            d(
+                                """
+                                |dumping dns, duration=[$duration]
+                                |$answer
+                                |done dumping dns
+                            """.trimMargin()
+                            )
+                            onRequestFinished(true)
+                        } else {
+                            e(e)
+                            onRequestFinished(false)
+                        }
+                    }
+                    .toCompletableFuture()
+                    .get()
+            } catch (e: Exception) {
+                e(e)
+                onRequestFinished(false)
+            }
+        }
+    }
+
+    val buttonColor = remember { mutableStateOf(Color.Magenta) }
+
+    Button(
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(backgroundColor = buttonColor.value),
+        onClick = {
+            performDnsLookup(
                 onRequestStarted = {
                     buttonColor.value = Color.LightGray
                 },

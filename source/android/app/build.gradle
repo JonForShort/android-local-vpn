@@ -79,6 +79,7 @@ dependencies {
     implementation 'com.jakewharton.timber:timber:4.7.1'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.5.1'
     implementation 'androidx.activity:activity-compose:1.6.0'
+    implementation 'dnsjava:dnsjava:3.5.1'
 
     debugImplementation "androidx.compose.ui:ui-tooling:1.2.1"
 }
