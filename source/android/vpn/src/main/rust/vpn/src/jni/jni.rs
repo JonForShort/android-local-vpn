@@ -25,8 +25,9 @@
 
 extern crate jni;
 
+use jni::signature::ReturnType;
 use self::jni::objects::{GlobalRef, JClass, JMethodID, JObject, JValue};
-use self::jni::signature::{JavaType, Primitive};
+use self::jni::signature::Primitive;
 use self::jni::{JNIEnv, JavaVM};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -97,7 +98,7 @@ impl Jni {
 pub struct JniContext<'a> {
     jni_env: JNIEnv<'a>,
     object: JObject<'a>,
-    protect_method_id: JMethodID<'a>,
+    protect_method_id: JMethodID,
 }
 
 impl<'a> JniContext<'a> {
@@ -106,8 +107,8 @@ impl<'a> JniContext<'a> {
             log::error!("invalid socket, socket={:?}", socket);
             return false;
         }
-        let return_type = JavaType::Primitive(Primitive::Boolean);
-        let arguments = [JValue::Int(socket)];
+        let return_type = ReturnType::Primitive(Primitive::Boolean);
+        let arguments = [JValue::Int(socket).to_jni()];
         let result = self.jni_env.call_method_unchecked(
             self.object,
             self.protect_method_id,

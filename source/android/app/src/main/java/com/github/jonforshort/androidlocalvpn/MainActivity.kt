@@ -57,6 +57,7 @@ import org.xbill.DNS.*
 import timber.log.Timber.d
 import timber.log.Timber.e
 import java.io.IOException
+import java.net.SocketTimeoutException
 
 class MainActivity : LocalVpnActivity() {
 
@@ -177,6 +178,9 @@ private fun TestHtmlQuery(text: String, url: String) {
                     """.trimMargin()
                 )
                 onRequestFinished(true)
+            } catch (e: SocketTimeoutException) {
+                e(e, "Request timed out")
+                onRequestFinished(false)
             } catch (e: IOException) {
                 e(e)
                 onRequestFinished(false)
