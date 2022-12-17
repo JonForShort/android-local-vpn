@@ -23,6 +23,7 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
+use clap::Parser;
 use core::tun;
 use core::tun_callbacks;
 use env_logger::Env;
@@ -33,41 +34,30 @@ use std::os::unix::io::AsRawFd;
 
 static OUT_INTERFACE: OnceCell<CString> = OnceCell::new();
 
+/// Tunnel traffic through sockets.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Name of the tun interface.
+    #[arg(short, long)]
+    tun: String,
+
+    /// Name of the output interface.
+    #[arg(short, long)]
+    out: String,
+}
+
 fn main() {
     let environment = Env::default().default_filter_or("info");
     env_logger::Builder::from_env(environment).init();
 
-    let matches = clap::App::new(env!("CARGO_PKG_NAME"))
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("Tunnel to socket.")
-        .arg(
-            clap::Arg::with_name("tun")
-                .short('t')
-                .long("tun")
-                .value_name("TUN")
-                .help("Name of the tun interface")
-                .required(true)
-                .takes_value(true),
-        )
-        .arg(
-            clap::Arg::with_name("out")
-                .short('o')
-                .long("out")
-                .value_name("OUT")
-                .help("Name of the output interface")
-                .required(true)
-                .takes_value(true),
-        )
-        .get_matches();
+    let args = Args::parse();
 
-    let out_interface = matches.value_of("out").unwrap();
-    OUT_INTERFACE
-        .set(CString::new(out_interface).unwrap())
-        .unwrap();
+    OUT_INTERFACE.set(CString::new(args.out).unwrap()).unwrap();
 
     tun_callbacks::set_socket_created_callback(Some(on_socket_created));
 
-    let tun_name = matches.value_of("tun").unwrap();
+    let tun_name = &args.tun;
     match TunTapInterface::new(tun_name, Medium::Ip) {
         Ok(tun) => {
             set_panic_handler();
@@ -108,8 +98,7 @@ fn bind_socket_to_interface(socket: i32, interface: &CString) {
     };
     if result == -1 {
         let error_code = unsafe { *libc::__errno_location() as i32 };
-        let error: std::io::Result<libc::c_int> =
-            Err(std::io::Error::from_raw_os_error(error_code));
+        let error: std::io::Result<libc::c_int> = Err(std::io::Error::from_raw_os_error(error_code));
         eprint!("failed to bind socket to interface, error={:?}", error);
     }
 }
