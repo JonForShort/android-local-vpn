@@ -36,7 +36,7 @@ pub(crate) struct VpnDevice {
     tx_queue: VecDeque<Vec<u8>>,
 }
 
-impl<'a> VpnDevice {
+impl VpnDevice {
     pub(crate) fn new() -> VpnDevice {
         VpnDevice {
             rx_queue: VecDeque::new(),
@@ -85,7 +85,7 @@ pub(crate) struct RxToken {
     buffer: Vec<u8>,
 }
 
-impl<'a> phy::RxToken for RxToken {
+impl phy::RxToken for RxToken {
     fn consume<R, F>(mut self, _timestamp: Instant, f: F) -> Result<R>
     where
         F: FnOnce(&mut [u8]) -> Result<R>,

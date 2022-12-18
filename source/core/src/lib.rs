@@ -32,7 +32,7 @@ pub mod tun {
 
     extern crate log;
 
-    use crate::vpn::vpn::Vpn;
+    use crate::vpn::Vpn;
     use std::process;
     use std::sync::Mutex;
 

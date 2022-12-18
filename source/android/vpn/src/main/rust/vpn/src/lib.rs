@@ -37,8 +37,8 @@ pub mod android {
     extern crate jni;
     extern crate log;
 
-    use crate::jni::jni::Jni;
-    use crate::socket_protector::socket_protector::SocketProtector;
+    use crate::jni::Jni;
+    use crate::socket_protector::SocketProtector;
 
     use android_logger::Config;
     use core::tun;
@@ -47,6 +47,9 @@ pub mod android {
     use jni::JNIEnv;
     use std::process;
 
+    /// # Safety
+    ///
+    /// This function should only be used in jni context.
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(env: JNIEnv, class: JClass, object: JObject) {
         android_logger::init_once(
@@ -61,6 +64,9 @@ pub mod android {
         tun::create();
     }
 
+    /// # Safety
+    ///
+    /// This function should only be used in jni context.
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onDestroyNative(_: JNIEnv, _: JClass) {
         log::trace!("onDestroyNative");
@@ -70,6 +76,9 @@ pub mod android {
         remove_panic_handler();
     }
 
+    /// # Safety
+    ///
+    /// This function should only be used in jni context.
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(_: JNIEnv, _: JClass, file_descriptor: i32) {
         log::trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
@@ -78,6 +87,9 @@ pub mod android {
         tun::start(file_descriptor);
     }
 
+    /// # Safety
+    ///
+    /// This function should only be used in jni context.
     #[no_mangle]
     pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStopVpn(_: JNIEnv, _: JClass) {
         log::trace!("onStopVpn, pid={}", process::id());

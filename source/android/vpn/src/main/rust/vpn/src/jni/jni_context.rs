@@ -23,80 +23,14 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-extern crate jni;
-
-use jni::objects::{GlobalRef, JClass, JMethodID, JObject, JValue};
+use jni::objects::{JMethodID, JObject, JValue};
 use jni::signature::{Primitive, ReturnType};
-use jni::{JNIEnv, JavaVM};
-use std::sync::Arc;
-use std::sync::Mutex;
-
-lazy_static! {
-    pub static ref JNI: Mutex<Option<Jni>> = Mutex::new(None);
-}
-
-pub struct Jni {
-    java_vm: Arc<JavaVM>,
-    object: GlobalRef,
-}
-
-impl Jni {
-    pub fn init(env: JNIEnv, _: JClass, object: JObject) {
-        let mut jni = JNI.lock().unwrap();
-        let java_vm = Arc::new(env.get_java_vm().unwrap());
-        let object = env.new_global_ref(object).unwrap();
-        *jni = Some(Jni { java_vm, object });
-    }
-
-    pub fn release() {
-        let mut jni = JNI.lock().unwrap();
-        *jni = None;
-    }
-
-    pub fn new_context(&self) -> Option<JniContext> {
-        match self.java_vm.attach_current_thread_permanently() {
-            Ok(jni_env) => match Jni::get_protect_method_id(jni_env) {
-                Some(protect_method_id) => {
-                    let object = self.object.as_obj();
-                    return Some(JniContext {
-                        jni_env,
-                        object,
-                        protect_method_id,
-                    });
-                }
-                None => {
-                    log::error!("failed to get protect method id");
-                }
-            },
-            Err(error) => {
-                log::error!("failed to attach to current thread, error={:?}", error);
-            }
-        }
-        None
-    }
-
-    fn get_protect_method_id(jni_env: JNIEnv) -> Option<JMethodID> {
-        match jni_env.find_class("android/net/VpnService") {
-            Ok(class) => match jni_env.get_method_id(class, "protect", "(I)Z") {
-                Ok(method_id) => {
-                    return Some(method_id);
-                }
-                Err(error) => {
-                    log::error!("failed to get protect method id, error={:?}", error);
-                }
-            },
-            Err(error) => {
-                log::error!("failed to find vpn service class, error={:?}", error);
-            }
-        }
-        None
-    }
-}
+use jni::JNIEnv;
 
 pub struct JniContext<'a> {
-    jni_env: JNIEnv<'a>,
-    object: JObject<'a>,
-    protect_method_id: JMethodID,
+    pub(super) jni_env: JNIEnv<'a>,
+    pub(super) object: JObject<'a>,
+    pub(super) protect_method_id: JMethodID,
 }
 
 impl<'a> JniContext<'a> {

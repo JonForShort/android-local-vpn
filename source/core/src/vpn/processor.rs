@@ -273,7 +273,7 @@ impl<'a> Processor<'a> {
 
             let is_session_closed = match session_data.tcp_stream.read() {
                 Ok((bytes, is_closed)) => {
-                    if bytes.len() > 0 {
+                    if !bytes.is_empty() {
                         let event = IncomingDataEvent {
                             direction: IncomingDirection::FromServer,
                             buffer: &bytes[..],
@@ -294,7 +294,7 @@ impl<'a> Processor<'a> {
                 }
             };
             if is_session_closed {
-                self.destroy_session(session.clone());
+                self.destroy_session(*session);
             }
 
             log::trace!("finished read from server, session={:?}", session);
@@ -351,7 +351,7 @@ impl<'a> Processor<'a> {
                 }
             }
             if tcp_socket.state() == TcpState::CloseWait {
-                self.destroy_session(session.clone());
+                self.destroy_session(*session);
             }
 
             log::trace!("finished read from mio, session={:?}", session);
