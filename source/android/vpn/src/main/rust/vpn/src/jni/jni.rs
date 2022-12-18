@@ -25,10 +25,9 @@
 
 extern crate jni;
 
-use jni::signature::ReturnType;
-use self::jni::objects::{GlobalRef, JClass, JMethodID, JObject, JValue};
-use self::jni::signature::Primitive;
-use self::jni::{JNIEnv, JavaVM};
+use jni::objects::{GlobalRef, JClass, JMethodID, JObject, JValue};
+use jni::signature::{Primitive, ReturnType};
+use jni::{JNIEnv, JavaVM};
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -45,10 +44,8 @@ impl Jni {
     pub fn init(env: JNIEnv, _: JClass, object: JObject) {
         let mut jni = JNI.lock().unwrap();
         let java_vm = Arc::new(env.get_java_vm().unwrap());
-        *jni = Some(Jni {
-            java_vm,
-            object: env.new_global_ref(object).unwrap(),
-        });
+        let object = env.new_global_ref(object).unwrap();
+        *jni = Some(Jni { java_vm, object });
     }
 
     pub fn release() {
@@ -60,9 +57,10 @@ impl Jni {
         match self.java_vm.attach_current_thread_permanently() {
             Ok(jni_env) => match Jni::get_protect_method_id(jni_env) {
                 Some(protect_method_id) => {
+                    let object = self.object.as_obj();
                     return Some(JniContext {
                         jni_env,
-                        object: self.object.as_obj(),
+                        object,
                         protect_method_id,
                     });
                 }

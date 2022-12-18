@@ -32,14 +32,10 @@ mod socket_protector;
 #[macro_use]
 extern crate lazy_static;
 
-#[allow(non_snake_case)]
 pub mod android {
     extern crate android_logger;
     extern crate jni;
     extern crate log;
-
-    use self::jni::objects::{JClass, JObject};
-    use self::jni::JNIEnv;
 
     use crate::jni::jni::Jni;
     use crate::socket_protector::socket_protector::SocketProtector;
@@ -47,6 +43,8 @@ pub mod android {
     use android_logger::Config;
     use core::tun;
     use core::tun_callbacks;
+    use jni::objects::{JClass, JObject};
+    use jni::JNIEnv;
     use std::process;
 
     #[no_mangle]
