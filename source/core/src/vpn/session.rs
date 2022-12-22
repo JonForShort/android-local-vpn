@@ -27,7 +27,7 @@ use super::buffers::Buffers;
 use super::tcp_stream::TcpStream;
 use mio::{Poll, Token};
 use smoltcp::iface::SocketHandle;
-use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket};
+use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
 use std::fmt;
 use std::hash::Hash;
 
@@ -43,8 +43,8 @@ pub(crate) struct Session {
 impl Session {
     pub(crate) fn new(bytes: &Vec<u8>) -> Option<Session> {
         match Ipv4Packet::new_checked(&bytes) {
-            Ok(ip_packet) => {
-                if ip_packet.protocol() == IpProtocol::Tcp {
+            Ok(ip_packet) => match ip_packet.protocol() {
+                IpProtocol::Tcp => {
                     let payload = ip_packet.payload();
                     let tcp_packet = TcpPacket::new_checked(payload).unwrap();
                     let src_ip_bytes = ip_packet.src_addr().as_bytes().try_into().unwrap();
@@ -57,7 +57,26 @@ impl Session {
                         protocol: u8::from(ip_packet.protocol()),
                     });
                 }
-            }
+                IpProtocol::Udp => {
+                    let payload = ip_packet.payload();
+                    let udp_packet = UdpPacket::new_checked(payload).unwrap();
+                    let src_ip_bytes = ip_packet.src_addr().as_bytes().try_into().unwrap();
+                    let dst_ip_bytes = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    return Some(Session {
+                        src_ip: src_ip_bytes,
+                        src_port: udp_packet.src_port(),
+                        dst_ip: dst_ip_bytes,
+                        dst_port: udp_packet.dst_port(),
+                        protocol: u8::from(ip_packet.protocol()),
+                    });
+                }
+                _ => {
+                    log::warn!(
+                        "unsupported transport protocol, protocol=${:?}",
+                        ip_packet.protocol()
+                    )
+                }
+            },
             Err(error) => {
                 log::error!(
                     "failed to build session, len={:?}, error={:?}",
@@ -67,6 +86,10 @@ impl Session {
             }
         }
         None
+    }
+
+    pub(crate) fn is_udp(&self) -> bool {
+        IpProtocol::from(self.protocol) == IpProtocol::Udp
     }
 }
 

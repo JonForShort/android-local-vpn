@@ -144,19 +144,24 @@ impl<'a> Processor<'a> {
 
     fn create_session(&mut self, bytes: &Vec<u8>) -> Option<Session> {
         if let Some(session) = Session::new(bytes) {
-            self.sessions.entry(session).or_insert_with_key(|session| {
-                log::debug!("creating session, session={:?}", session);
+            if session.is_udp() {
+                log::debug!("skipping udp session, session={:?}", session);
+                None
+            } else {
+                self.sessions.entry(session).or_insert_with_key(|session| {
+                    log::debug!("creating session, session={:?}", session);
 
-                let socket = Processor::create_socket(session).unwrap();
-                let socket_handle = self.interface.add_socket(socket);
+                    let socket = Processor::create_socket(session).unwrap();
+                    let socket_handle = self.interface.add_socket(socket);
 
-                let token = Token(self.next_token_id);
-                self.tokens_to_sessions.insert(token, *session);
-                self.next_token_id += 1;
+                    let token = Token(self.next_token_id);
+                    self.tokens_to_sessions.insert(token, *session);
+                    self.next_token_id += 1;
 
-                SessionData::new(session, socket_handle, &mut self.poll, token)
-            });
-            Some(session)
+                    SessionData::new(session, socket_handle, &mut self.poll, token)
+                });
+                Some(session)
+            }
         } else {
             log::error!("failed to get session for bytes, len={:?}", bytes.len());
             None
