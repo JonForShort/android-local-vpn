@@ -23,9 +23,7 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::buffers::IncomingDataEvent;
-use super::buffers::IncomingDirection;
-use super::buffers::OutgoingDirection;
+use super::buffers::{IncomingDataEvent, IncomingDirection, OutgoingDirection};
 use super::session::Session;
 use super::session::SessionData;
 use super::utils::log_packet;
@@ -34,10 +32,11 @@ use mio::event::Event;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token, Waker};
 use smoltcp::iface::{Interface, InterfaceBuilder, Routes};
-use smoltcp::socket::{TcpSocket, TcpSocketBuffer, TcpState};
+use smoltcp::socket::{TcpSocket, TcpState};
 use smoltcp::time::Instant;
-use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint, Ipv4Address};
+use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
 use std::collections::btree_map::BTreeMap;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::ErrorKind;
@@ -124,48 +123,30 @@ impl<'a> Processor<'a> {
         interface
     }
 
-    fn create_socket(session: &Session) -> Option<TcpSocket<'a>> {
-        let mut socket = TcpSocket::new(
-            TcpSocketBuffer::new(vec![0; 1048576]),
-            TcpSocketBuffer::new(vec![0; 1048576]),
-        );
-
-        let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
-        let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
-        if socket.listen(dst_endpoint).is_err() {
-            log::error!("failed to listen on socket, session=[{}]", session);
-            return None;
-        }
-
-        socket.set_ack_delay(None);
-
-        Some(socket)
-    }
-
     fn create_session(&mut self, bytes: &Vec<u8>) -> Option<Session> {
         if let Some(session) = Session::new(bytes) {
-            if session.is_udp() {
-                log::debug!("skipping udp session, session={:?}", session);
-                None
-            } else {
-                self.sessions.entry(session).or_insert_with_key(|session| {
-                    log::debug!("creating session, session={:?}", session);
-
-                    let socket = Processor::create_socket(session).unwrap();
-                    let socket_handle = self.interface.add_socket(socket);
-
+            match self.sessions.entry(session) {
+                Entry::Vacant(entry) => {
                     let token = Token(self.next_token_id);
-                    self.tokens_to_sessions.insert(token, *session);
-                    self.next_token_id += 1;
+                    if let Some(session_data) = SessionData::new(&session, &mut self.interface, &mut self.poll, token) {
+                        self.tokens_to_sessions.insert(token, session);
+                        self.next_token_id += 1;
 
-                    SessionData::new(session, socket_handle, &mut self.poll, token)
-                });
-                Some(session)
+                        entry.insert(session_data);
+
+                        log::debug!("created session, session={:?}", session);
+
+                        return Some(session);
+                    }
+                }
+                Entry::Occupied(_) => {
+                    return Some(session);
+                }
             }
         } else {
             log::error!("failed to get session for bytes, len={:?}", bytes.len());
-            None
         }
+        None
     }
 
     fn destroy_session(&mut self, session: Session) {

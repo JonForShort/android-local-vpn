@@ -25,9 +25,11 @@
 
 use super::buffers::Buffers;
 use super::tcp_stream::TcpStream;
+use super::vpn_device::VpnDevice;
 use mio::{Poll, Token};
-use smoltcp::iface::SocketHandle;
-use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
+use smoltcp::iface::{Interface, SocketHandle};
+use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
+use smoltcp::wire::{IpAddress, IpEndpoint, IpProtocol, Ipv4Address, Ipv4Packet, TcpPacket, UdpPacket};
 use std::fmt;
 use std::hash::Hash;
 
@@ -87,10 +89,6 @@ impl Session {
         }
         None
     }
-
-    pub(crate) fn is_udp(&self) -> bool {
-        IpProtocol::from(self.protocol) == IpProtocol::Udp
-    }
 }
 
 impl fmt::Display for Session {
@@ -118,16 +116,48 @@ pub(crate) struct SessionData {
 }
 
 impl SessionData {
-    pub(crate) fn new(session: &Session, socket_handle: SocketHandle, poll: &mut Poll, token: Token) -> SessionData {
-        let mut tcp_stream = TcpStream::new();
-        tcp_stream.connect(session.dst_ip, session.dst_port);
-        tcp_stream.register_poll(poll, token);
+    pub(crate) fn new(session: &Session, interface: &mut Interface<VpnDevice>, poll: &mut Poll, token: Token) -> Option<SessionData> {
+        match IpProtocol::from(session.protocol) {
+            IpProtocol::Tcp => {
+                let socket = Self::create_socket(session).unwrap();
+                let socket_handle = interface.add_socket(socket);
 
-        SessionData {
-            socket_handle,
-            tcp_stream,
-            token,
-            buffers: Buffers::new(),
+                let mut tcp_stream = TcpStream::new();
+                tcp_stream.connect(session.dst_ip, session.dst_port);
+                tcp_stream.register_poll(poll, token);
+
+                let session_data = SessionData {
+                    socket_handle,
+                    tcp_stream,
+                    token,
+                    buffers: Buffers::new(),
+                };
+
+                return Some(session_data);
+            }
+            IpProtocol::Udp => {
+                log::debug!("skipping udp session, session={:?}", session);
+            }
+            _ => {}
         }
+        None
+    }
+
+    fn create_socket<'a>(session: &Session) -> Option<TcpSocket<'a>> {
+        let mut socket = TcpSocket::new(
+            TcpSocketBuffer::new(vec![0; 1048576]),
+            TcpSocketBuffer::new(vec![0; 1048576]),
+        );
+
+        let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
+        let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
+        if socket.listen(dst_endpoint).is_err() {
+            log::error!("failed to listen on socket, session=[{}]", session);
+            return None;
+        }
+
+        socket.set_ack_delay(None);
+
+        Some(socket)
     }
 }
