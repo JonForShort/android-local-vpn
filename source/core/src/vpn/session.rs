@@ -24,135 +24,59 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::buffers::Buffers;
+use super::session_info::SessionInfo;
 use super::tcp_stream::TcpStream;
 use super::vpn_device::VpnDevice;
 use mio::{Poll, Token};
 use smoltcp::iface::{Interface, SocketHandle};
 use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
-use smoltcp::wire::{IpAddress, IpEndpoint, IpProtocol, Ipv4Address, Ipv4Packet, TcpPacket, UdpPacket};
-use std::fmt;
-use std::hash::Hash;
+use smoltcp::wire::{IpAddress, IpEndpoint, IpProtocol, Ipv4Address};
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub(crate) struct Session {
-    pub(crate) src_ip: [u8; 4],
-    pub(crate) src_port: u16,
-    pub(crate) dst_ip: [u8; 4],
-    pub(crate) dst_port: u16,
-    pub(crate) protocol: u8,
-}
-
-impl Session {
-    pub(crate) fn new(bytes: &Vec<u8>) -> Option<Session> {
-        match Ipv4Packet::new_checked(&bytes) {
-            Ok(ip_packet) => match ip_packet.protocol() {
-                IpProtocol::Tcp => {
-                    let payload = ip_packet.payload();
-                    let tcp_packet = TcpPacket::new_checked(payload).unwrap();
-                    let src_ip_bytes = ip_packet.src_addr().as_bytes().try_into().unwrap();
-                    let dst_ip_bytes = ip_packet.dst_addr().as_bytes().try_into().unwrap();
-                    return Some(Session {
-                        src_ip: src_ip_bytes,
-                        src_port: tcp_packet.src_port(),
-                        dst_ip: dst_ip_bytes,
-                        dst_port: tcp_packet.dst_port(),
-                        protocol: u8::from(ip_packet.protocol()),
-                    });
-                }
-                IpProtocol::Udp => {
-                    let payload = ip_packet.payload();
-                    let udp_packet = UdpPacket::new_checked(payload).unwrap();
-                    let src_ip_bytes = ip_packet.src_addr().as_bytes().try_into().unwrap();
-                    let dst_ip_bytes = ip_packet.dst_addr().as_bytes().try_into().unwrap();
-                    return Some(Session {
-                        src_ip: src_ip_bytes,
-                        src_port: udp_packet.src_port(),
-                        dst_ip: dst_ip_bytes,
-                        dst_port: udp_packet.dst_port(),
-                        protocol: u8::from(ip_packet.protocol()),
-                    });
-                }
-                _ => {
-                    log::warn!(
-                        "unsupported transport protocol, protocol=${:?}",
-                        ip_packet.protocol()
-                    )
-                }
-            },
-            Err(error) => {
-                log::error!(
-                    "failed to build session, len={:?}, error={:?}",
-                    bytes.len(),
-                    error
-                );
-            }
-        }
-        None
-    }
-}
-
-impl fmt::Display for Session {
-    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            formatter,
-            "{}:{}->{}:{}",
-            ip_octet_to_string(&self.src_ip),
-            self.src_port,
-            ip_octet_to_string(&self.dst_ip),
-            self.dst_port
-        )
-    }
-}
-
-fn ip_octet_to_string(ip: &[u8; 4]) -> String {
-    ip.iter().map(|&i| i.to_string() + ".").collect()
-}
-
-pub(crate) struct SessionData {
     pub(crate) socket_handle: SocketHandle,
     pub(crate) tcp_stream: TcpStream,
     pub(crate) token: Token,
     pub(crate) buffers: Buffers,
 }
 
-impl SessionData {
-    pub(crate) fn new(session: &Session, interface: &mut Interface<VpnDevice>, poll: &mut Poll, token: Token) -> Option<SessionData> {
-        match IpProtocol::from(session.protocol) {
+impl Session {
+    pub(crate) fn new(session_info: &SessionInfo, interface: &mut Interface<VpnDevice>, poll: &mut Poll, token: Token) -> Option<Session> {
+        match IpProtocol::from(session_info.protocol) {
             IpProtocol::Tcp => {
-                let socket = Self::create_socket(session).unwrap();
+                let socket = Self::create_socket(session_info).unwrap();
                 let socket_handle = interface.add_socket(socket);
 
                 let mut tcp_stream = TcpStream::new();
-                tcp_stream.connect(session.dst_ip, session.dst_port);
+                tcp_stream.connect(session_info.dst_ip, session_info.dst_port);
                 tcp_stream.register_poll(poll, token);
 
-                let session_data = SessionData {
+                let session = Session {
                     socket_handle,
                     tcp_stream,
                     token,
                     buffers: Buffers::new(),
                 };
 
-                return Some(session_data);
+                return Some(session);
             }
             IpProtocol::Udp => {
-                log::debug!("skipping udp session, session={:?}", session);
+                log::debug!("skipping udp session, session={:?}", session_info);
             }
             _ => {}
         }
         None
     }
 
-    fn create_socket<'a>(session: &Session) -> Option<TcpSocket<'a>> {
+    fn create_socket<'a>(session_info: &SessionInfo) -> Option<TcpSocket<'a>> {
         let mut socket = TcpSocket::new(
             TcpSocketBuffer::new(vec![0; 1048576]),
             TcpSocketBuffer::new(vec![0; 1048576]),
         );
 
-        let dst_ip = Ipv4Address::from_bytes(&session.dst_ip);
-        let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session.dst_port);
+        let dst_ip = Ipv4Address::from_bytes(&session_info.dst_ip);
+        let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session_info.dst_port);
         if socket.listen(dst_endpoint).is_err() {
-            log::error!("failed to listen on socket, session=[{}]", session);
+            log::error!("failed to listen on socket, session=[{}]", session_info);
             return None;
         }
 

@@ -25,7 +25,7 @@
 
 use super::buffers::{IncomingDataEvent, IncomingDirection, OutgoingDirection};
 use super::session::Session;
-use super::session::SessionData;
+use super::session_info::SessionInfo;
 use super::utils::log_packet;
 use crate::vpn::vpn_device::VpnDevice;
 use mio::event::Event;
@@ -43,8 +43,8 @@ use std::io::ErrorKind;
 use std::io::{Read, Write};
 use std::os::unix::io::FromRawFd;
 
-type Sessions = HashMap<Session, SessionData>;
-type TokensToSessions = HashMap<Token, Session>;
+type Sessions = HashMap<SessionInfo, Session>;
+type TokensToSessions = HashMap<Token, SessionInfo>;
 
 const EVENTS_CAPACITY: usize = 1024;
 
@@ -123,24 +123,24 @@ impl<'a> Processor<'a> {
         interface
     }
 
-    fn create_session(&mut self, bytes: &Vec<u8>) -> Option<Session> {
-        if let Some(session) = Session::new(bytes) {
-            match self.sessions.entry(session) {
+    fn create_session(&mut self, bytes: &Vec<u8>) -> Option<SessionInfo> {
+        if let Some(session_info) = SessionInfo::new(bytes) {
+            match self.sessions.entry(session_info) {
                 Entry::Vacant(entry) => {
                     let token = Token(self.next_token_id);
-                    if let Some(session_data) = SessionData::new(&session, &mut self.interface, &mut self.poll, token) {
-                        self.tokens_to_sessions.insert(token, session);
+                    if let Some(session) = Session::new(&session_info, &mut self.interface, &mut self.poll, token) {
+                        self.tokens_to_sessions.insert(token, session_info);
                         self.next_token_id += 1;
 
-                        entry.insert(session_data);
+                        entry.insert(session);
 
-                        log::debug!("created session, session={:?}", session);
+                        log::debug!("created session, session={:?}", session_info);
 
-                        return Some(session);
+                        return Some(session_info);
                     }
                 }
                 Entry::Occupied(_) => {
-                    return Some(session);
+                    return Some(session_info);
                 }
             }
         } else {
@@ -149,29 +149,29 @@ impl<'a> Processor<'a> {
         None
     }
 
-    fn destroy_session(&mut self, session: Session) {
-        log::trace!("destroying session, session={:?}", session);
+    fn destroy_session(&mut self, session_info: SessionInfo) {
+        log::trace!("destroying session, session={:?}", session_info);
 
         // push any pending data back to tun device before destroying session.
-        self.write_to_mio(&session);
+        self.write_to_mio(&session_info);
         self.write_to_tun();
 
-        if let Some(session_data) = self.sessions.get_mut(&session) {
+        if let Some(session) = self.sessions.get_mut(&session_info) {
             let socket = self
                 .interface
-                .get_socket::<TcpSocket>(session_data.socket_handle);
+                .get_socket::<TcpSocket>(session.socket_handle);
             socket.abort();
 
-            let tcp_stream = &mut session_data.tcp_stream;
+            let tcp_stream = &mut session.tcp_stream;
             tcp_stream.close();
             tcp_stream.deregister_poll(&mut self.poll);
 
-            self.tokens_to_sessions.remove(&session_data.token);
+            self.tokens_to_sessions.remove(&session.token);
 
-            self.sessions.remove(&session);
+            self.sessions.remove(&session_info);
         }
 
-        log::trace!("finished destroying session, session={:?}", session);
+        log::trace!("finished destroying session, session={:?}", session_info);
     }
 
     fn handle_tun_event(&mut self, event: &Event) {
@@ -224,47 +224,47 @@ impl<'a> Processor<'a> {
     }
 
     fn handle_server_event(&mut self, event: &Event) {
-        if let Some(session) = self.tokens_to_sessions.get(&event.token()) {
-            let session = *session;
+        if let Some(session_info) = self.tokens_to_sessions.get(&event.token()) {
+            let session_info = *session_info;
             if event.is_readable() {
-                log::trace!("handle server event read, session={:?}", session);
+                log::trace!("handle server event read, session={:?}", session_info);
 
-                self.read_from_server(&session);
-                self.write_to_mio(&session);
+                self.read_from_server(&session_info);
+                self.write_to_mio(&session_info);
                 self.write_to_tun();
 
-                log::trace!("finished handle server event read, session={:?}", session);
+                log::trace!("finished server event read, session={:?}", session_info);
             }
             if event.is_writable() {
-                log::trace!("handle server event write, session={:?}", session);
+                log::trace!("handle server event write, session={:?}", session_info);
 
-                self.read_from_mio(&session);
-                self.write_to_server(&session);
+                self.read_from_mio(&session_info);
+                self.write_to_server(&session_info);
 
-                log::trace!("finished handle server event write, session={:?}", session);
+                log::trace!("finished server event write, session={:?}", session_info);
             }
             if event.is_read_closed() || event.is_write_closed() {
-                log::trace!("handle server event closed, session={:?}", session);
+                log::trace!("handle server event closed, session={:?}", session_info);
 
-                self.destroy_session(session);
+                self.destroy_session(session_info);
 
-                log::trace!("finished handle server event closed, session={:?}", session);
+                log::trace!("finished server event closed, session={:?}", session_info);
             }
         }
     }
 
-    fn read_from_server(&mut self, session: &Session) {
-        if let Some(session_data) = self.sessions.get_mut(session) {
-            log::trace!("read from server, session={:?}", session);
+    fn read_from_server(&mut self, session_info: &SessionInfo) {
+        if let Some(session) = self.sessions.get_mut(session_info) {
+            log::trace!("read from server, session={:?}", session_info);
 
-            let is_session_closed = match session_data.tcp_stream.read() {
+            let is_session_closed = match session.tcp_stream.read() {
                 Ok((bytes, is_closed)) => {
                     if !bytes.is_empty() {
                         let event = IncomingDataEvent {
                             direction: IncomingDirection::FromServer,
                             buffer: &bytes[..],
                         };
-                        session_data.buffers.push_data(event);
+                        session.buffers.push_data(event);
                     }
                     is_closed
                 }
@@ -280,25 +280,25 @@ impl<'a> Processor<'a> {
                 }
             };
             if is_session_closed {
-                self.destroy_session(*session);
+                self.destroy_session(*session_info);
             }
 
-            log::trace!("finished read from server, session={:?}", session);
+            log::trace!("finished read from server, session={:?}", session_info);
         }
     }
 
-    fn write_to_server(&mut self, session: &Session) {
-        if let Some(session_data) = self.sessions.get_mut(session) {
-            log::trace!("write to server, session={:?}", session);
+    fn write_to_server(&mut self, session_info: &SessionInfo) {
+        if let Some(session) = self.sessions.get_mut(session_info) {
+            log::trace!("write to server, session={:?}", session_info);
 
-            let buffer = session_data
+            let buffer = session
                 .buffers
                 .peek_data(OutgoingDirection::ToServer)
                 .buffer
                 .to_vec();
-            match session_data.tcp_stream.write(&buffer[..]) {
+            match session.tcp_stream.write(&buffer[..]) {
                 Ok(consumed) => {
-                    session_data
+                    session
                         .buffers
                         .consume_data(OutgoingDirection::ToServer, consumed);
                 }
@@ -311,24 +311,24 @@ impl<'a> Processor<'a> {
                 }
             }
 
-            log::trace!("finished write to server, session={:?}", session);
+            log::trace!("finished write to server, session={:?}", session_info);
         }
     }
 
-    fn read_from_mio(&mut self, session: &Session) {
-        if let Some(session_data) = self.sessions.get_mut(session) {
-            log::trace!("read from mio, session={:?}", session);
+    fn read_from_mio(&mut self, session_info: &SessionInfo) {
+        if let Some(session) = self.sessions.get_mut(session_info) {
+            log::trace!("read from mio, session={:?}", session_info);
 
             let tcp_socket = self
                 .interface
-                .get_socket::<TcpSocket>(session_data.socket_handle);
+                .get_socket::<TcpSocket>(session.socket_handle);
             while tcp_socket.can_recv() {
                 let result = tcp_socket.recv(|data| {
                     let event = IncomingDataEvent {
                         direction: IncomingDirection::FromClient,
                         buffer: data,
                     };
-                    session_data.buffers.push_data(event);
+                    session.buffers.push_data(event);
                     (data.len(), (data))
                 });
                 if let Err(error) = result {
@@ -337,25 +337,25 @@ impl<'a> Processor<'a> {
                 }
             }
             if tcp_socket.state() == TcpState::CloseWait {
-                self.destroy_session(*session);
+                self.destroy_session(*session_info);
             }
 
-            log::trace!("finished read from mio, session={:?}", session);
+            log::trace!("finished read from mio, session={:?}", session_info);
         }
     }
 
-    fn write_to_mio(&mut self, session: &Session) {
-        if let Some(session_data) = self.sessions.get_mut(session) {
-            log::trace!("write to mio, session={:?}", session);
+    fn write_to_mio(&mut self, session_info: &SessionInfo) {
+        if let Some(session) = self.sessions.get_mut(session_info) {
+            log::trace!("write to mio, session={:?}", session_info);
 
             let tcp_socket = self
                 .interface
-                .get_socket::<TcpSocket>(session_data.socket_handle);
+                .get_socket::<TcpSocket>(session.socket_handle);
             if tcp_socket.may_send() {
-                let event = session_data.buffers.peek_data(OutgoingDirection::ToClient);
+                let event = session.buffers.peek_data(OutgoingDirection::ToClient);
                 match tcp_socket.send_slice(event.buffer) {
                     Ok(consumed) => {
-                        session_data
+                        session
                             .buffers
                             .consume_data(OutgoingDirection::ToClient, consumed);
                     }
@@ -365,7 +365,7 @@ impl<'a> Processor<'a> {
                 }
             }
 
-            log::trace!("finished write to mio, session={:?}", session);
+            log::trace!("finished write to mio, session={:?}", session_info);
         }
     }
 }
