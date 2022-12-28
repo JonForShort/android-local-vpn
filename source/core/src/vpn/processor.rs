@@ -162,9 +162,9 @@ impl<'a> Processor<'a> {
                 .get_socket::<TcpSocket>(session.socket_handle);
             socket.abort();
 
-            let tcp_stream = &mut session.tcp_stream;
-            tcp_stream.close();
-            tcp_stream.deregister_poll(&mut self.poll);
+            let connection = &mut session.connection;
+            connection.close();
+            connection.deregister_poll(&mut self.poll);
 
             self.tokens_to_sessions.remove(&session.token);
 
@@ -257,7 +257,7 @@ impl<'a> Processor<'a> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("read from server, session={:?}", session_info);
 
-            let is_session_closed = match session.tcp_stream.read() {
+            let is_session_closed = match session.connection.read() {
                 Ok((bytes, is_closed)) => {
                     if !bytes.is_empty() {
                         let event = IncomingDataEvent {
@@ -296,7 +296,7 @@ impl<'a> Processor<'a> {
                 .peek_data(OutgoingDirection::ToServer)
                 .buffer
                 .to_vec();
-            match session.tcp_stream.write(&buffer[..]) {
+            match session.connection.write(&buffer[..]) {
                 Ok(consumed) => {
                     session
                         .buffers

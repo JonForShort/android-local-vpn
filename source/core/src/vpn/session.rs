@@ -24,8 +24,8 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::buffers::Buffers;
+use super::connection::{Connection, ConnectionProtocol};
 use super::session_info::SessionInfo;
-use super::tcp_stream::TcpStream;
 use super::vpn_device::VpnDevice;
 use mio::{Poll, Token};
 use smoltcp::iface::{Interface, SocketHandle};
@@ -34,7 +34,7 @@ use smoltcp::wire::{IpAddress, IpEndpoint, IpProtocol, Ipv4Address};
 
 pub(crate) struct Session {
     pub(crate) socket_handle: SocketHandle,
-    pub(crate) tcp_stream: TcpStream,
+    pub(crate) connection: Connection,
     pub(crate) token: Token,
     pub(crate) buffers: Buffers,
 }
@@ -46,13 +46,17 @@ impl Session {
                 let socket = Self::create_socket(session_info).unwrap();
                 let socket_handle = interface.add_socket(socket);
 
-                let mut tcp_stream = TcpStream::new();
-                tcp_stream.connect(session_info.dst_ip, session_info.dst_port);
-                tcp_stream.register_poll(poll, token);
+                let mut connection = Connection::new();
+                connection.connect(
+                    ConnectionProtocol::Tcp,
+                    session_info.dst_ip,
+                    session_info.dst_port,
+                );
+                connection.register_poll(poll, token);
 
                 let session = Session {
                     socket_handle,
-                    tcp_stream,
+                    connection,
                     token,
                     buffers: Buffers::new(),
                 };

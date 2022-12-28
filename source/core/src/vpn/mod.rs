@@ -24,10 +24,10 @@
 // For more information, please refer to <https://unlicense.org>
 
 mod buffers;
+mod connection;
 mod processor;
 mod session;
 mod session_info;
-mod tcp_stream;
 mod utils;
 mod vpn_device;
 
