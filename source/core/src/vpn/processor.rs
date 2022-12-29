@@ -34,7 +34,7 @@ use mio::{Events, Interest, Poll, Token, Waker};
 use smoltcp::iface::{Interface, InterfaceBuilder, Routes};
 use smoltcp::socket::{TcpSocket, TcpState};
 use smoltcp::time::Instant;
-use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
+use smoltcp::wire::{IpAddress, IpCidr, IpProtocol, Ipv4Address};
 use std::collections::btree_map::BTreeMap;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -125,6 +125,14 @@ impl<'a> Processor<'a> {
 
     fn create_session(&mut self, bytes: &Vec<u8>) -> Option<SessionInfo> {
         if let Some(session_info) = SessionInfo::new(bytes) {
+            //
+            // Temporarily disable UDP sessions.
+            //
+            if IpProtocol::from(session_info.protocol) == IpProtocol::Udp {
+                log::trace!("skipping udp session, session={:?}", session_info);
+                return None;
+            }
+
             match self.sessions.entry(session_info) {
                 Entry::Vacant(entry) => {
                     let token = Token(self.next_token_id);
@@ -159,7 +167,7 @@ impl<'a> Processor<'a> {
         if let Some(session) = self.sessions.get_mut(&session_info) {
             let socket = self
                 .interface
-                .get_socket::<TcpSocket>(session.socket_handle);
+                .get_socket::<TcpSocket>(session.smoltcp_socket.handle);
             socket.abort();
 
             let mio_socket = &mut session.mio_socket;
@@ -321,7 +329,7 @@ impl<'a> Processor<'a> {
 
             let tcp_socket = self
                 .interface
-                .get_socket::<TcpSocket>(session.socket_handle);
+                .get_socket::<TcpSocket>(session.smoltcp_socket.handle);
             while tcp_socket.can_recv() {
                 let result = tcp_socket.recv(|data| {
                     let event = IncomingDataEvent {
@@ -350,7 +358,7 @@ impl<'a> Processor<'a> {
 
             let tcp_socket = self
                 .interface
-                .get_socket::<TcpSocket>(session.socket_handle);
+                .get_socket::<TcpSocket>(session.smoltcp_socket.handle);
             if tcp_socket.may_send() {
                 let event = session.buffers.peek_data(OutgoingDirection::ToClient);
                 match tcp_socket.send_slice(event.buffer) {

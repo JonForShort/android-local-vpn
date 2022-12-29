@@ -28,6 +28,7 @@ mod mio_socket;
 mod processor;
 mod session;
 mod session_info;
+mod smoltcp_socket;
 mod utils;
 mod vpn_device;
 

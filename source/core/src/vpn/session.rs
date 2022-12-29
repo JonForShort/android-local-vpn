@@ -24,60 +24,30 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::buffers::Buffers;
-use super::mio_socket::{Protocol, Socket};
+use super::mio_socket::{Protocol as MioProtocol, Socket as MioSocket};
 use super::session_info::SessionInfo;
+use super::smoltcp_socket::{Protocol as SmoltcpProtocol, Socket as SmoltcpSocket};
 use super::vpn_device::VpnDevice;
 use mio::{Poll, Token};
-use smoltcp::iface::{Interface, SocketHandle};
-use smoltcp::socket::{TcpSocket, TcpSocketBuffer};
-use smoltcp::wire::{IpAddress, IpEndpoint, IpProtocol, Ipv4Address};
+use smoltcp::iface::Interface;
+use smoltcp::wire::IpProtocol;
 
 pub(crate) struct Session {
-    pub(crate) socket_handle: SocketHandle,
-    pub(crate) mio_socket: Socket,
+    pub(crate) smoltcp_socket: SmoltcpSocket,
+    pub(crate) mio_socket: MioSocket,
     pub(crate) token: Token,
     pub(crate) buffers: Buffers,
 }
 
 impl Session {
     pub(crate) fn new(session_info: &SessionInfo, interface: &mut Interface<VpnDevice>, poll: &mut Poll, token: Token) -> Option<Session> {
-        let ip_protocol = IpProtocol::from(session_info.protocol);
-
-        let socket_handle = match ip_protocol {
-            IpProtocol::Tcp => {
-                let socket = Self::create_tcp_socket(session_info).unwrap();
-                interface.add_socket(socket)
-            }
-            //
-            // Temporarily disabling UDP
-            //
-            // IpProtocol::Udp => {
-            //     let socket = Self::create_udp_socket(session_info).unwrap();
-            //     interface.add_socket(socket)
-            // }
-            _ => return None,
-        };
-
-        let transport_protocol = match ip_protocol {
-            IpProtocol::Tcp => Protocol::Tcp,
-            IpProtocol::Udp => Protocol::Udp,
-            _ => return None,
-        };
-
-        let mut mio_socket = Socket::new(
-            transport_protocol,
-            session_info.dst_ip,
-            session_info.dst_port,
-        )?;
-
-        if let Err(error) = mio_socket.register_poll(poll, token) {
-            log::error!("failed to register poll, error={:?}", error);
-            return None;
-        }
+        let protocol = IpProtocol::from(session_info.protocol);
+        let ip = session_info.dst_ip;
+        let port = session_info.dst_port;
 
         let session = Session {
-            socket_handle,
-            mio_socket,
+            smoltcp_socket: Self::create_smoltcp_socket(protocol, ip, port, interface)?,
+            mio_socket: Self::create_mio_socket(protocol, ip, port, poll, token)?,
             token,
             buffers: Buffers::new(),
         };
@@ -85,40 +55,30 @@ impl Session {
         Some(session)
     }
 
-    fn create_tcp_socket<'a>(session_info: &SessionInfo) -> Option<TcpSocket<'a>> {
-        let mut socket = TcpSocket::new(
-            TcpSocketBuffer::new(vec![0; 1048576]),
-            TcpSocketBuffer::new(vec![0; 1048576]),
-        );
+    fn create_smoltcp_socket(ip_protocol: IpProtocol, ip: [u8; 4], port: u16, interface: &mut Interface<VpnDevice>) -> Option<SmoltcpSocket> {
+        let protocol = match ip_protocol {
+            IpProtocol::Tcp => SmoltcpProtocol::Tcp,
+            IpProtocol::Udp => SmoltcpProtocol::Udp,
+            _ => return None,
+        };
 
-        let dst_ip = Ipv4Address::from_bytes(&session_info.dst_ip);
-        let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session_info.dst_port);
-        if socket.listen(dst_endpoint).is_err() {
-            log::error!("failed to listen on socket, session=[{}]", session_info);
+        SmoltcpSocket::new(protocol, ip, port, interface)
+    }
+
+    fn create_mio_socket(ip_protocol: IpProtocol, ip: [u8; 4], port: u16, poll: &mut Poll, token: Token) -> Option<MioSocket> {
+        let protocol = match ip_protocol {
+            IpProtocol::Tcp => MioProtocol::Tcp,
+            IpProtocol::Udp => MioProtocol::Udp,
+            _ => return None,
+        };
+
+        let mut mio_socket = MioSocket::new(protocol, ip, port)?;
+
+        if let Err(error) = mio_socket.register_poll(poll, token) {
+            log::error!("failed to register poll, error={:?}", error);
             return None;
         }
 
-        socket.set_ack_delay(None);
-
-        Some(socket)
+        Some(mio_socket)
     }
-
-    //
-    // Temporarily disabling UDP.
-    //
-    // fn create_udp_socket<'a>(session_info: &SessionInfo) -> Option<UdpSocket<'a>> {
-    //     let mut socket = UdpSocket::new(
-    //         UdpSocketBuffer::new(Vec::new(), vec![0; 1048576]),
-    //         UdpSocketBuffer::new(Vec::new(), vec![0; 1048576]),
-    //     );
-
-    //     let dst_ip = Ipv4Address::from_bytes(&session_info.dst_ip);
-    //     let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session_info.dst_port);
-    //     if socket.bind(dst_endpoint).is_err() {
-    //         log::error!("failed to bind socket, session=[{}]", session_info);
-    //         return None;
-    //     }
-
-    //     Some(socket)
-    // }
 }
