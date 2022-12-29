@@ -41,37 +41,51 @@ pub(crate) struct Session {
 
 impl Session {
     pub(crate) fn new(session_info: &SessionInfo, interface: &mut Interface<VpnDevice>, poll: &mut Poll, token: Token) -> Option<Session> {
-        match IpProtocol::from(session_info.protocol) {
+        let ip_protocol = IpProtocol::from(session_info.protocol);
+
+        let socket_handle = match ip_protocol {
             IpProtocol::Tcp => {
-                let socket = Self::create_socket(session_info).unwrap();
-                let socket_handle = interface.add_socket(socket);
-
-                let mut connection = Connection::new();
-                connection.connect(
-                    ConnectionProtocol::Tcp,
-                    session_info.dst_ip,
-                    session_info.dst_port,
-                );
-                connection.register_poll(poll, token);
-
-                let session = Session {
-                    socket_handle,
-                    connection,
-                    token,
-                    buffers: Buffers::new(),
-                };
-
-                return Some(session);
+                let socket = Self::create_tcp_socket(session_info).unwrap();
+                interface.add_socket(socket)
             }
-            IpProtocol::Udp => {
-                log::debug!("skipping udp session, session={:?}", session_info);
-            }
-            _ => {}
+            //
+            // Temporarily disabling UDP
+            //
+            // IpProtocol::Udp => {
+            //     let socket = Self::create_udp_socket(session_info).unwrap();
+            //     interface.add_socket(socket)
+            // }
+            _ => return None,
+        };
+
+        let transport_protocol = match ip_protocol {
+            IpProtocol::Tcp => ConnectionProtocol::Tcp,
+            IpProtocol::Udp => ConnectionProtocol::Udp,
+            _ => return None,
+        };
+
+        let mut connection = Connection::new(
+            transport_protocol,
+            session_info.dst_ip,
+            session_info.dst_port,
+        )?;
+
+        if let Err(error) = connection.register_poll(poll, token) {
+            log::error!("failed to register poll, error={:?}", error);
+            return None;
         }
-        None
+
+        let session = Session {
+            socket_handle,
+            connection,
+            token,
+            buffers: Buffers::new(),
+        };
+
+        Some(session)
     }
 
-    fn create_socket<'a>(session_info: &SessionInfo) -> Option<TcpSocket<'a>> {
+    fn create_tcp_socket<'a>(session_info: &SessionInfo) -> Option<TcpSocket<'a>> {
         let mut socket = TcpSocket::new(
             TcpSocketBuffer::new(vec![0; 1048576]),
             TcpSocketBuffer::new(vec![0; 1048576]),
@@ -88,4 +102,23 @@ impl Session {
 
         Some(socket)
     }
+
+    //
+    // Temporarily disabling UDP.
+    //
+    // fn create_udp_socket<'a>(session_info: &SessionInfo) -> Option<UdpSocket<'a>> {
+    //     let mut socket = UdpSocket::new(
+    //         UdpSocketBuffer::new(Vec::new(), vec![0; 1048576]),
+    //         UdpSocketBuffer::new(Vec::new(), vec![0; 1048576]),
+    //     );
+
+    //     let dst_ip = Ipv4Address::from_bytes(&session_info.dst_ip);
+    //     let dst_endpoint = IpEndpoint::new(IpAddress::from(dst_ip), session_info.dst_port);
+    //     if socket.bind(dst_endpoint).is_err() {
+    //         log::error!("failed to bind socket, session=[{}]", session_info);
+    //         return None;
+    //     }
+
+    //     Some(socket)
+    // }
 }

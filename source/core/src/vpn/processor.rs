@@ -164,7 +164,10 @@ impl<'a> Processor<'a> {
 
             let connection = &mut session.connection;
             connection.close();
-            connection.deregister_poll(&mut self.poll);
+
+            if let Err(error) = connection.deregister_poll(&mut self.poll) {
+                log::error!("failed to deregister poll, error={:?}", error);
+            }
 
             self.tokens_to_sessions.remove(&session.token);
 
