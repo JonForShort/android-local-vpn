@@ -24,7 +24,7 @@
 // For more information, please refer to <https://unlicense.org>
 
 mod buffers;
-mod connection;
+mod mio_socket;
 mod processor;
 mod session;
 mod session_info;

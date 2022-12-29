@@ -162,12 +162,9 @@ impl<'a> Processor<'a> {
                 .get_socket::<TcpSocket>(session.socket_handle);
             socket.abort();
 
-            let connection = &mut session.connection;
-            connection.close();
-
-            if let Err(error) = connection.deregister_poll(&mut self.poll) {
-                log::error!("failed to deregister poll, error={:?}", error);
-            }
+            let mio_socket = &mut session.mio_socket;
+            mio_socket.close();
+            mio_socket.deregister_poll(&mut self.poll).unwrap();
 
             self.tokens_to_sessions.remove(&session.token);
 
@@ -260,7 +257,7 @@ impl<'a> Processor<'a> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("read from server, session={:?}", session_info);
 
-            let is_session_closed = match session.connection.read() {
+            let is_session_closed = match session.mio_socket.read() {
                 Ok((bytes, is_closed)) => {
                     if !bytes.is_empty() {
                         let event = IncomingDataEvent {
@@ -299,7 +296,7 @@ impl<'a> Processor<'a> {
                 .peek_data(OutgoingDirection::ToServer)
                 .buffer
                 .to_vec();
-            match session.connection.write(&buffer[..]) {
+            match session.mio_socket.write(&buffer[..]) {
                 Ok(consumed) => {
                     session
                         .buffers

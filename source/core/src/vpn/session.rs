@@ -24,7 +24,7 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::buffers::Buffers;
-use super::connection::{Connection, ConnectionProtocol};
+use super::mio_socket::{Protocol, Socket};
 use super::session_info::SessionInfo;
 use super::vpn_device::VpnDevice;
 use mio::{Poll, Token};
@@ -34,7 +34,7 @@ use smoltcp::wire::{IpAddress, IpEndpoint, IpProtocol, Ipv4Address};
 
 pub(crate) struct Session {
     pub(crate) socket_handle: SocketHandle,
-    pub(crate) connection: Connection,
+    pub(crate) mio_socket: Socket,
     pub(crate) token: Token,
     pub(crate) buffers: Buffers,
 }
@@ -59,25 +59,25 @@ impl Session {
         };
 
         let transport_protocol = match ip_protocol {
-            IpProtocol::Tcp => ConnectionProtocol::Tcp,
-            IpProtocol::Udp => ConnectionProtocol::Udp,
+            IpProtocol::Tcp => Protocol::Tcp,
+            IpProtocol::Udp => Protocol::Udp,
             _ => return None,
         };
 
-        let mut connection = Connection::new(
+        let mut mio_socket = Socket::new(
             transport_protocol,
             session_info.dst_ip,
             session_info.dst_port,
         )?;
 
-        if let Err(error) = connection.register_poll(poll, token) {
+        if let Err(error) = mio_socket.register_poll(poll, token) {
             log::error!("failed to register poll, error={:?}", error);
             return None;
         }
 
         let session = Session {
             socket_handle,
-            connection,
+            mio_socket,
             token,
             buffers: Buffers::new(),
         };
