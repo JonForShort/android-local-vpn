@@ -34,7 +34,9 @@ pub(crate) enum Protocol {
 }
 
 pub(crate) struct Socket {
-    pub(crate) handle: SocketHandle,
+    handle: SocketHandle,
+    protocol: Protocol,
+    endpoint: IpEndpoint,
 }
 
 impl Socket {
@@ -53,7 +55,11 @@ impl Socket {
             }
         };
 
-        let socket = Socket { handle };
+        let socket = Socket {
+            protocol,
+            handle,
+            endpoint,
+        };
 
         Some(socket)
     }
@@ -86,5 +92,79 @@ impl Socket {
         }
 
         Some(socket)
+    }
+
+    pub(crate) fn get<'a, 'b>(&self, interface: &'b mut Interface<'a, VpnDevice>) -> SocketInstance<'a, 'b> {
+        let socket = match self.protocol {
+            Protocol::Tcp => {
+                let socket = interface.get_socket::<TcpSocket>(self.handle);
+                SocketType::Tcp(self.endpoint, socket)
+            }
+            Protocol::Udp => {
+                let socket = interface.get_socket::<UdpSocket>(self.handle);
+                SocketType::Udp(self.endpoint, socket)
+            }
+        };
+        SocketInstance { instance: socket }
+    }
+}
+
+pub(crate) struct SocketInstance<'a, 'b> {
+    instance: SocketType<'a, 'b>,
+}
+
+enum SocketType<'a, 'b> {
+    Tcp(IpEndpoint, &'b mut TcpSocket<'a>),
+    Udp(IpEndpoint, &'b mut UdpSocket<'a>),
+}
+
+impl<'a, 'b> SocketInstance<'a, 'b> {
+    pub(crate) fn can_send(&self) -> bool {
+        match &self.instance {
+            SocketType::Tcp(_, socket) => socket.may_send(),
+            SocketType::Udp(_, _) => true,
+        }
+    }
+
+    pub(crate) fn send(&mut self, data: &[u8]) -> smoltcp::Result<usize> {
+        match &mut self.instance {
+            SocketType::Tcp(_, socket) => socket.send_slice(data),
+            SocketType::Udp(endpoint, socket) => {
+                let result = socket.send_slice(data, *endpoint);
+                if result.is_ok() {
+                    smoltcp::Result::Ok(data.len())
+                } else {
+                    smoltcp::Result::Err(result.err().unwrap())
+                }
+            }
+        }
+    }
+
+    pub(crate) fn can_receive(&self) -> bool {
+        match &self.instance {
+            SocketType::Tcp(_, socket) => socket.can_recv(),
+            SocketType::Udp(_, socket) => socket.can_recv(),
+        }
+    }
+
+    pub(crate) fn receive(&'b mut self, data: &mut [u8]) -> smoltcp::Result<usize> {
+        match &mut self.instance {
+            SocketType::Tcp(_, socket) => socket.recv_slice(data),
+            SocketType::Udp(_, socket) => {
+                let result = socket.recv_slice(data);
+                if result.is_ok() {
+                    smoltcp::Result::Ok(result.ok().unwrap().0)
+                } else {
+                    smoltcp::Result::Err(result.err().unwrap())
+                }
+            }
+        }
+    }
+
+    pub(crate) fn close(&mut self) {
+        match &mut self.instance {
+            SocketType::Tcp(_, socket) => socket.close(),
+            SocketType::Udp(_, socket) => socket.close(),
+        }
     }
 }

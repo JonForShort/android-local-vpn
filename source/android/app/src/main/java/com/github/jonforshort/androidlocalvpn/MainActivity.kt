@@ -184,6 +184,9 @@ private fun TestHtmlQuery(text: String, url: String) {
             } catch (e: IOException) {
                 e(e)
                 onRequestFinished(false)
+            } catch (e: RuntimeException) {
+                e(e)
+                onRequestFinished(false)
             }
         }
     }

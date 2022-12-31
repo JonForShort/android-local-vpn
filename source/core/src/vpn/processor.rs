@@ -32,7 +32,6 @@ use mio::event::Event;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token, Waker};
 use smoltcp::iface::{Interface, InterfaceBuilder, Routes};
-use smoltcp::socket::{TcpSocket, TcpState};
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpCidr, IpProtocol, Ipv4Address};
 use std::collections::btree_map::BTreeMap;
@@ -157,18 +156,16 @@ impl<'a> Processor<'a> {
         None
     }
 
-    fn destroy_session(&mut self, session_info: SessionInfo) {
+    fn destroy_session(&mut self, session_info: &SessionInfo) {
         log::trace!("destroying session, session={:?}", session_info);
 
         // push any pending data back to tun device before destroying session.
-        self.write_to_mio(&session_info);
+        self.write_to_mio(session_info);
         self.write_to_tun();
 
-        if let Some(session) = self.sessions.get_mut(&session_info) {
-            let socket = self
-                .interface
-                .get_socket::<TcpSocket>(session.smoltcp_socket.handle);
-            socket.abort();
+        if let Some(session) = self.sessions.get_mut(session_info) {
+            let mut smoltcp_socket = session.smoltcp_socket.get(&mut self.interface);
+            smoltcp_socket.close();
 
             let mio_socket = &mut session.mio_socket;
             mio_socket.close();
@@ -176,7 +173,7 @@ impl<'a> Processor<'a> {
 
             self.tokens_to_sessions.remove(&session.token);
 
-            self.sessions.remove(&session_info);
+            self.sessions.remove(session_info);
         }
 
         log::trace!("finished destroying session, session={:?}", session_info);
@@ -254,7 +251,7 @@ impl<'a> Processor<'a> {
             if event.is_read_closed() || event.is_write_closed() {
                 log::trace!("handle server event closed, session={:?}", session_info);
 
-                self.destroy_session(session_info);
+                self.destroy_session(&session_info);
 
                 log::trace!("finished server event closed, session={:?}", session_info);
             }
@@ -288,7 +285,7 @@ impl<'a> Processor<'a> {
                 }
             };
             if is_session_closed {
-                self.destroy_session(*session_info);
+                self.destroy_session(session_info);
             }
 
             log::trace!("finished read from server, session={:?}", session_info);
@@ -327,25 +324,25 @@ impl<'a> Processor<'a> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("read from mio, session={:?}", session_info);
 
-            let tcp_socket = self
-                .interface
-                .get_socket::<TcpSocket>(session.smoltcp_socket.handle);
-            while tcp_socket.can_recv() {
-                let result = tcp_socket.recv(|data| {
-                    let event = IncomingDataEvent {
-                        direction: IncomingDirection::FromClient,
-                        buffer: data,
-                    };
-                    session.buffers.push_data(event);
-                    (data.len(), (data))
-                });
-                if let Err(error) = result {
-                    log::error!("failed to receive from tcp socket, error={:?}", error);
+            let mut data: [u8; 65535] = [0; 65535];
+            loop {
+                let mut socket = session.smoltcp_socket.get(&mut self.interface);
+                if !socket.can_receive() {
                     break;
                 }
-            }
-            if tcp_socket.state() == TcpState::CloseWait {
-                self.destroy_session(*session_info);
+                match socket.receive(&mut data) {
+                    Ok(data_len) => {
+                        let event = IncomingDataEvent {
+                            direction: IncomingDirection::FromClient,
+                            buffer: &data[..data_len],
+                        };
+                        session.buffers.push_data(event);
+                    }
+                    Err(error) => {
+                        log::error!("failed to receive from socket, error={:?}", error);
+                        break;
+                    }
+                }
             }
 
             log::trace!("finished read from mio, session={:?}", session_info);
@@ -356,12 +353,10 @@ impl<'a> Processor<'a> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("write to mio, session={:?}", session_info);
 
-            let tcp_socket = self
-                .interface
-                .get_socket::<TcpSocket>(session.smoltcp_socket.handle);
-            if tcp_socket.may_send() {
+            let mut socket = session.smoltcp_socket.get(&mut self.interface);
+            if socket.can_send() {
                 let event = session.buffers.peek_data(OutgoingDirection::ToClient);
-                match tcp_socket.send_slice(event.buffer) {
+                match socket.send(event.buffer) {
                     Ok(consumed) => {
                         session
                             .buffers
