@@ -27,14 +27,10 @@ use super::buffers::{IncomingDataEvent, IncomingDirection, OutgoingDirection};
 use super::session::Session;
 use super::session_info::SessionInfo;
 use super::utils::log_packet;
-use crate::vpn::vpn_device::VpnDevice;
 use mio::event::Event;
 use mio::unix::SourceFd;
 use mio::{Events, Interest, Poll, Token, Waker};
-use smoltcp::iface::{Interface, InterfaceBuilder, Routes};
 use smoltcp::time::Instant;
-use smoltcp::wire::{IpAddress, IpCidr, IpProtocol, Ipv4Address};
-use std::collections::btree_map::BTreeMap;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fs::File;
@@ -42,7 +38,7 @@ use std::io::ErrorKind;
 use std::io::{Read, Write};
 use std::os::unix::io::FromRawFd;
 
-type Sessions = HashMap<SessionInfo, Session>;
+type Sessions<'a> = HashMap<SessionInfo, Session<'a>>;
 type TokensToSessions = HashMap<Token, SessionInfo>;
 
 const EVENTS_CAPACITY: usize = 1024;
@@ -55,10 +51,9 @@ pub(crate) struct Processor<'a> {
     file_descriptor: i32,
     file: File,
     poll: Poll,
-    sessions: Sessions,
+    sessions: Sessions<'a>,
     tokens_to_sessions: TokensToSessions,
     next_token_id: usize,
-    interface: Interface<'a, VpnDevice>,
 }
 
 impl<'a> Processor<'a> {
@@ -70,7 +65,6 @@ impl<'a> Processor<'a> {
             sessions: Sessions::new(),
             tokens_to_sessions: TokensToSessions::new(),
             next_token_id: TOKEN_START_ID,
-            interface: Processor::create_interface(),
         }
     }
 
@@ -109,33 +103,12 @@ impl<'a> Processor<'a> {
         }
     }
 
-    fn create_interface() -> Interface<'a, VpnDevice> {
-        let mut routes = Routes::new(BTreeMap::new());
-        let default_gateway_ipv4 = Ipv4Address::new(0, 0, 0, 1);
-        routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
-
-        let interface = InterfaceBuilder::new(VpnDevice::new(), vec![])
-            .any_ip(true)
-            .ip_addrs([IpCidr::new(IpAddress::v4(0, 0, 0, 1), 0)])
-            .routes(routes)
-            .finalize();
-        interface
-    }
-
     fn create_session(&mut self, bytes: &Vec<u8>) -> Option<SessionInfo> {
         if let Some(session_info) = SessionInfo::new(bytes) {
-            //
-            // Temporarily disable UDP sessions.
-            //
-            if IpProtocol::from(session_info.protocol) == IpProtocol::Udp {
-                log::trace!("skipping udp session, session={:?}", session_info);
-                return None;
-            }
-
             match self.sessions.entry(session_info) {
                 Entry::Vacant(entry) => {
                     let token = Token(self.next_token_id);
-                    if let Some(session) = Session::new(&session_info, &mut self.interface, &mut self.poll, token) {
+                    if let Some(session) = Session::new(&session_info, &mut self.poll, token) {
                         self.tokens_to_sessions.insert(token, session_info);
                         self.next_token_id += 1;
 
@@ -160,11 +133,11 @@ impl<'a> Processor<'a> {
         log::trace!("destroying session, session={:?}", session_info);
 
         // push any pending data back to tun device before destroying session.
-        self.write_to_mio(session_info);
-        self.write_to_tun();
+        self.write_to_smoltcp(session_info);
+        self.write_to_tun(session_info);
 
         if let Some(session) = self.sessions.get_mut(session_info) {
-            let mut smoltcp_socket = session.smoltcp_socket.get(&mut self.interface);
+            let mut smoltcp_socket = session.smoltcp_socket.get(&mut session.interface);
             smoltcp_socket.close();
 
             let mio_socket = &mut session.mio_socket;
@@ -193,12 +166,13 @@ impl<'a> Processor<'a> {
                         let read_buffer = buffer[..count].to_vec();
                         log_packet("out", &read_buffer);
 
-                        if let Some(session) = self.create_session(&read_buffer) {
-                            self.interface.device_mut().receive(read_buffer);
+                        if let Some(session_info) = self.create_session(&read_buffer) {
+                            let session = self.sessions.get_mut(&session_info).unwrap();
+                            session.interface.device_mut().receive(read_buffer);
 
-                            self.write_to_tun();
-                            self.read_from_mio(&session);
-                            self.write_to_server(&session);
+                            self.write_to_tun(&session_info);
+                            self.read_from_smoltcp(&session_info);
+                            self.write_to_server(&session_info);
                         }
                     }
                     Err(error) => {
@@ -216,16 +190,21 @@ impl<'a> Processor<'a> {
         }
     }
 
-    fn write_to_tun(&mut self) {
-        log::trace!("write to tun");
+    fn write_to_tun(&mut self, session_info: &SessionInfo) {
+        if let Some(session) = self.sessions.get_mut(session_info) {
+            log::trace!("write to tun");
 
-        self.interface.poll(Instant::now()).unwrap();
-        while let Some(bytes) = self.interface.device_mut().transmit() {
-            log_packet("in", &bytes);
-            self.file.write_all(&bytes[..]).unwrap();
+            if let Err(error) = session.interface.poll(Instant::now()) {
+                log::error!("failed to poll interface, error={:?}", error);
+            }
+
+            while let Some(bytes) = session.interface.device_mut().transmit() {
+                log_packet("in", &bytes);
+                self.file.write_all(&bytes[..]).unwrap();
+            }
+
+            log::trace!("finished write to tun");
         }
-
-        log::trace!("finished write to tun");
     }
 
     fn handle_server_event(&mut self, event: &Event) {
@@ -235,15 +214,15 @@ impl<'a> Processor<'a> {
                 log::trace!("handle server event read, session={:?}", session_info);
 
                 self.read_from_server(&session_info);
-                self.write_to_mio(&session_info);
-                self.write_to_tun();
+                self.write_to_smoltcp(&session_info);
+                self.write_to_tun(&session_info);
 
                 log::trace!("finished server event read, session={:?}", session_info);
             }
             if event.is_writable() {
                 log::trace!("handle server event write, session={:?}", session_info);
 
-                self.read_from_mio(&session_info);
+                self.read_from_smoltcp(&session_info);
                 self.write_to_server(&session_info);
 
                 log::trace!("finished server event write, session={:?}", session_info);
@@ -320,13 +299,13 @@ impl<'a> Processor<'a> {
         }
     }
 
-    fn read_from_mio(&mut self, session_info: &SessionInfo) {
+    fn read_from_smoltcp(&mut self, session_info: &SessionInfo) {
         if let Some(session) = self.sessions.get_mut(session_info) {
-            log::trace!("read from mio, session={:?}", session_info);
+            log::trace!("read from smoltcp, session={:?}", session_info);
 
             let mut data: [u8; 65535] = [0; 65535];
             loop {
-                let mut socket = session.smoltcp_socket.get(&mut self.interface);
+                let mut socket = session.smoltcp_socket.get(&mut session.interface);
                 if !socket.can_receive() {
                     break;
                 }
@@ -339,21 +318,21 @@ impl<'a> Processor<'a> {
                         session.buffers.push_data(event);
                     }
                     Err(error) => {
-                        log::error!("failed to receive from socket, error={:?}", error);
+                        log::error!("failed to receive from smoltcp, error={:?}", error);
                         break;
                     }
                 }
             }
 
-            log::trace!("finished read from mio, session={:?}", session_info);
+            log::trace!("finished read from smoltcp, session={:?}", session_info);
         }
     }
 
-    fn write_to_mio(&mut self, session_info: &SessionInfo) {
+    fn write_to_smoltcp(&mut self, session_info: &SessionInfo) {
         if let Some(session) = self.sessions.get_mut(session_info) {
-            log::trace!("write to mio, session={:?}", session_info);
+            log::trace!("write to smoltcp, session={:?}", session_info);
 
-            let mut socket = session.smoltcp_socket.get(&mut self.interface);
+            let mut socket = session.smoltcp_socket.get(&mut session.interface);
             if socket.can_send() {
                 let event = session.buffers.peek_data(OutgoingDirection::ToClient);
                 match socket.send(event.buffer) {
@@ -368,7 +347,7 @@ impl<'a> Processor<'a> {
                 }
             }
 
-            log::trace!("finished write to mio, session={:?}", session_info);
+            log::trace!("finished write to smoltcp, session={:?}", session_info);
         }
     }
 }

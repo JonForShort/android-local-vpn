@@ -25,54 +25,60 @@
 
 use super::buffers::Buffers;
 use super::mio_socket::{Protocol as MioProtocol, Socket as MioSocket};
-use super::session_info::SessionInfo;
+use super::session_info::{SessionInfo, SessionProtocol};
 use super::smoltcp_socket::{Protocol as SmoltcpProtocol, Socket as SmoltcpSocket};
 use super::vpn_device::VpnDevice;
 use mio::{Poll, Token};
-use smoltcp::iface::Interface;
-use smoltcp::wire::IpProtocol;
+use smoltcp::iface::{Interface, InterfaceBuilder, Routes};
+use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
+use std::collections::btree_map::BTreeMap;
+use std::net::SocketAddr;
 
-pub(crate) struct Session {
+pub(crate) struct Session<'a> {
     pub(crate) smoltcp_socket: SmoltcpSocket,
     pub(crate) mio_socket: MioSocket,
     pub(crate) token: Token,
     pub(crate) buffers: Buffers,
+    pub(crate) interface: Interface<'a, VpnDevice>,
 }
 
-impl Session {
-    pub(crate) fn new(session_info: &SessionInfo, interface: &mut Interface<VpnDevice>, poll: &mut Poll, token: Token) -> Option<Session> {
-        let protocol = IpProtocol::from(session_info.protocol);
-        let ip = session_info.dst_ip;
-        let port = session_info.dst_port;
+impl<'a> Session<'a> {
+    pub(crate) fn new(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<Session<'a>> {
+        let mut interface = Self::create_interface();
 
         let session = Session {
-            smoltcp_socket: Self::create_smoltcp_socket(protocol, ip, port, interface)?,
-            mio_socket: Self::create_mio_socket(protocol, ip, port, poll, token)?,
+            smoltcp_socket: Self::create_smoltcp_socket(session_info, &mut interface)?,
+            mio_socket: Self::create_mio_socket(session_info, poll, token)?,
             token,
             buffers: Buffers::new(),
+            interface,
         };
 
         Some(session)
     }
 
-    fn create_smoltcp_socket(ip_protocol: IpProtocol, ip: [u8; 4], port: u16, interface: &mut Interface<VpnDevice>) -> Option<SmoltcpSocket> {
-        let protocol = match ip_protocol {
-            IpProtocol::Tcp => SmoltcpProtocol::Tcp,
-            IpProtocol::Udp => SmoltcpProtocol::Udp,
-            _ => return None,
+    fn create_smoltcp_socket(session_info: &SessionInfo, interface: &mut Interface<VpnDevice>) -> Option<SmoltcpSocket> {
+        let local_address = SocketAddr::from((session_info.src_ip, session_info.src_port));
+
+        let remote_address = SocketAddr::from((session_info.dst_ip, session_info.dst_port));
+
+        let protocol = match session_info.protocol {
+            SessionProtocol::Tcp => SmoltcpProtocol::Tcp,
+            SessionProtocol::Udp => SmoltcpProtocol::Udp,
         };
 
-        SmoltcpSocket::new(protocol, ip, port, interface)
+        SmoltcpSocket::new(protocol, local_address, remote_address, interface)
     }
 
-    fn create_mio_socket(ip_protocol: IpProtocol, ip: [u8; 4], port: u16, poll: &mut Poll, token: Token) -> Option<MioSocket> {
-        let protocol = match ip_protocol {
-            IpProtocol::Tcp => MioProtocol::Tcp,
-            IpProtocol::Udp => MioProtocol::Udp,
-            _ => return None,
+    fn create_mio_socket(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<MioSocket> {
+        let remote_address = SocketAddr::from((session_info.dst_ip, session_info.dst_port));
+
+        let protocol = match session_info.protocol {
+            SessionProtocol::Tcp => MioProtocol::Tcp,
+            SessionProtocol::Udp => MioProtocol::Udp,
         };
 
-        let mut mio_socket = MioSocket::new(protocol, ip, port)?;
+        let mut mio_socket = MioSocket::new(protocol, remote_address)?;
 
         if let Err(error) = mio_socket.register_poll(poll, token) {
             log::error!("failed to register poll, error={:?}", error);
@@ -80,5 +86,19 @@ impl Session {
         }
 
         Some(mio_socket)
+    }
+
+    fn create_interface() -> Interface<'a, VpnDevice> {
+        let mut routes = Routes::new(BTreeMap::new());
+        let default_gateway_ipv4 = Ipv4Address::new(0, 0, 0, 1);
+        routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
+
+        let interface = InterfaceBuilder::new(VpnDevice::new(), vec![])
+            .any_ip(true)
+            .ip_addrs([IpCidr::new(IpAddress::v4(0, 0, 0, 1), 0)])
+            .routes(routes)
+            .finalize();
+
+        interface
     }
 }

@@ -25,8 +25,9 @@
 
 use super::vpn_device::VpnDevice;
 use smoltcp::iface::{Interface, SocketHandle};
-use smoltcp::socket::{TcpSocket, TcpSocketBuffer, UdpSocket, UdpSocketBuffer};
-use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
+use smoltcp::socket::{TcpSocket, TcpSocketBuffer, UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
+use smoltcp::wire::IpEndpoint;
+use std::net::SocketAddr;
 
 pub(crate) enum Protocol {
     Tcp,
@@ -34,31 +35,32 @@ pub(crate) enum Protocol {
 }
 
 pub(crate) struct Socket {
-    handle: SocketHandle,
+    socket_handle: SocketHandle,
     protocol: Protocol,
-    endpoint: IpEndpoint,
+    local_endpoint: IpEndpoint,
 }
 
 impl Socket {
-    pub(crate) fn new(protocol: Protocol, ip: [u8; 4], port: u16, interface: &mut Interface<VpnDevice>) -> Option<Socket> {
-        let ip = IpAddress::from(Ipv4Address::from_bytes(&ip));
-        let endpoint = IpEndpoint::new(ip, port);
+    pub(crate) fn new(protocol: Protocol, local_address: SocketAddr, remote_address: SocketAddr, interface: &mut Interface<VpnDevice>) -> Option<Socket> {
+        let local_endpoint = IpEndpoint::from(local_address);
 
-        let handle = match protocol {
+        let remote_endpoint = IpEndpoint::from(remote_address);
+
+        let socket_handle = match protocol {
             Protocol::Tcp => {
-                let socket = Self::create_tcp_socket(endpoint).unwrap();
+                let socket = Self::create_tcp_socket(remote_endpoint).unwrap();
                 interface.add_socket(socket)
             }
             Protocol::Udp => {
-                let socket = Self::create_udp_socket(endpoint).unwrap();
+                let socket = Self::create_udp_socket(remote_endpoint).unwrap();
                 interface.add_socket(socket)
             }
         };
 
         let socket = Socket {
             protocol,
-            handle,
-            endpoint,
+            socket_handle,
+            local_endpoint,
         };
 
         Some(socket)
@@ -66,8 +68,8 @@ impl Socket {
 
     fn create_tcp_socket<'a>(endpoint: IpEndpoint) -> Option<TcpSocket<'a>> {
         let mut socket = TcpSocket::new(
-            TcpSocketBuffer::new(vec![0; 1048576]),
-            TcpSocketBuffer::new(vec![0; 1048576]),
+            TcpSocketBuffer::new(vec![0; 1024 * 1024]),
+            TcpSocketBuffer::new(vec![0; 1024 * 1024]),
         );
 
         if socket.listen(endpoint).is_err() {
@@ -82,8 +84,14 @@ impl Socket {
 
     fn create_udp_socket<'a>(endpoint: IpEndpoint) -> Option<UdpSocket<'a>> {
         let mut socket = UdpSocket::new(
-            UdpSocketBuffer::new(Vec::new(), vec![0; 1048576]),
-            UdpSocketBuffer::new(Vec::new(), vec![0; 1048576]),
+            UdpSocketBuffer::new(
+                vec![UdpPacketMetadata::EMPTY, UdpPacketMetadata::EMPTY],
+                vec![0; 1024 * 1024],
+            ),
+            UdpSocketBuffer::new(
+                vec![UdpPacketMetadata::EMPTY, UdpPacketMetadata::EMPTY],
+                vec![0; 1024 * 1024],
+            ),
         );
 
         if socket.bind(endpoint).is_err() {
@@ -97,14 +105,15 @@ impl Socket {
     pub(crate) fn get<'a, 'b>(&self, interface: &'b mut Interface<'a, VpnDevice>) -> SocketInstance<'a, 'b> {
         let socket = match self.protocol {
             Protocol::Tcp => {
-                let socket = interface.get_socket::<TcpSocket>(self.handle);
-                SocketType::Tcp(self.endpoint, socket)
+                let socket = interface.get_socket::<TcpSocket>(self.socket_handle);
+                SocketType::Tcp(socket)
             }
             Protocol::Udp => {
-                let socket = interface.get_socket::<UdpSocket>(self.handle);
-                SocketType::Udp(self.endpoint, socket)
+                let socket = interface.get_socket::<UdpSocket>(self.socket_handle);
+                SocketType::Udp(socket, self.local_endpoint)
             }
         };
+
         SocketInstance { instance: socket }
     }
 }
@@ -114,57 +123,47 @@ pub(crate) struct SocketInstance<'a, 'b> {
 }
 
 enum SocketType<'a, 'b> {
-    Tcp(IpEndpoint, &'b mut TcpSocket<'a>),
-    Udp(IpEndpoint, &'b mut UdpSocket<'a>),
+    Tcp(&'b mut TcpSocket<'a>),
+    Udp(&'b mut UdpSocket<'a>, IpEndpoint),
 }
 
 impl<'a, 'b> SocketInstance<'a, 'b> {
     pub(crate) fn can_send(&self) -> bool {
         match &self.instance {
-            SocketType::Tcp(_, socket) => socket.may_send(),
+            SocketType::Tcp(socket) => socket.may_send(),
             SocketType::Udp(_, _) => true,
         }
     }
 
     pub(crate) fn send(&mut self, data: &[u8]) -> smoltcp::Result<usize> {
         match &mut self.instance {
-            SocketType::Tcp(_, socket) => socket.send_slice(data),
-            SocketType::Udp(endpoint, socket) => {
-                let result = socket.send_slice(data, *endpoint);
-                if result.is_ok() {
-                    smoltcp::Result::Ok(data.len())
-                } else {
-                    smoltcp::Result::Err(result.err().unwrap())
-                }
-            }
+            SocketType::Tcp(socket) => socket.send_slice(data),
+            SocketType::Udp(socket, local_endpoint) => socket
+                .send_slice(data, *local_endpoint)
+                .and(smoltcp::Result::Ok(data.len())),
         }
     }
 
     pub(crate) fn can_receive(&self) -> bool {
         match &self.instance {
-            SocketType::Tcp(_, socket) => socket.can_recv(),
-            SocketType::Udp(_, socket) => socket.can_recv(),
+            SocketType::Tcp(socket) => socket.can_recv(),
+            SocketType::Udp(socket, _) => socket.can_recv(),
         }
     }
 
     pub(crate) fn receive(&'b mut self, data: &mut [u8]) -> smoltcp::Result<usize> {
         match &mut self.instance {
-            SocketType::Tcp(_, socket) => socket.recv_slice(data),
-            SocketType::Udp(_, socket) => {
-                let result = socket.recv_slice(data);
-                if result.is_ok() {
-                    smoltcp::Result::Ok(result.ok().unwrap().0)
-                } else {
-                    smoltcp::Result::Err(result.err().unwrap())
-                }
-            }
+            SocketType::Tcp(socket) => socket.recv_slice(data),
+            SocketType::Udp(socket, _) => socket
+                .recv_slice(data)
+                .and_then(|result| smoltcp::Result::Ok(result.0)),
         }
     }
 
     pub(crate) fn close(&mut self) {
         match &mut self.instance {
-            SocketType::Tcp(_, socket) => socket.close(),
-            SocketType::Udp(_, socket) => socket.close(),
+            SocketType::Tcp(socket) => socket.close(),
+            SocketType::Udp(socket, _) => socket.close(),
         }
     }
 }

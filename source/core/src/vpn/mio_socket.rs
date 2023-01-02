@@ -38,27 +38,27 @@ pub(crate) enum Protocol {
 
 pub(crate) struct Socket {
     _socket: socket2::Socket, // Need to retain so socket does not get closed.
-    connection: Type,
+    connection: Connection,
 }
 
-enum Type {
+enum Connection {
     Tcp(TcpStream),
     Udp(UdpSocket),
 }
 
 impl Socket {
-    pub(crate) fn new(protocol: Protocol, ip: [u8; 4], port: u16) -> Option<Socket> {
+    pub(crate) fn new(protocol: Protocol, remote_address: SocketAddr) -> Option<Socket> {
         let socket = Self::create_socket(&protocol);
 
         on_socket_created(socket.as_raw_fd());
 
-        let address = socket2::SockAddr::from(SocketAddr::from((ip, port)));
+        let socket_address = socket2::SockAddr::from(remote_address);
 
-        log::debug!("connecting to host, address={:?}", address);
+        log::debug!("connecting to host, address={:?}", remote_address);
 
-        match socket.connect(&address) {
+        match socket.connect(&socket_address) {
             Ok(_) => {
-                log::debug!("connected to host, address={:?}", address);
+                log::debug!("connected to host, address={:?}", remote_address);
             }
             Err(error) => {
                 if error.kind() == ErrorKind::WouldBlock || error.raw_os_error() == Some(libc::EINPROGRESS) {
@@ -67,7 +67,7 @@ impl Socket {
                     log::error!(
                         "failed to connect to host, error={:?} address={:?}",
                         error,
-                        address
+                        remote_address
                     );
                     return None;
                 }
@@ -84,40 +84,46 @@ impl Socket {
 
     pub(crate) fn register_poll(&mut self, poll: &mut Poll, token: Token) -> std::io::Result<()> {
         match &mut self.connection {
-            Type::Tcp(connection) => Self::register_poll_with_source(poll, connection, token),
-            Type::Udp(connection) => Self::register_poll_with_source(poll, connection, token),
+            Connection::Tcp(connection) => {
+                let interests = Interest::READABLE | Interest::WRITABLE;
+                Self::register_poll_with_source(poll, connection, token, interests)
+            }
+            Connection::Udp(connection) => {
+                let interests = Interest::READABLE;
+                Self::register_poll_with_source(poll, connection, token, interests)
+            }
         }
     }
 
     pub(crate) fn deregister_poll(&mut self, poll: &mut Poll) -> std::io::Result<()> {
         match &mut self.connection {
-            Type::Tcp(connection) => Self::deregister_poll_with_source(poll, connection),
-            Type::Udp(connection) => Self::deregister_poll_with_source(poll, connection),
+            Connection::Tcp(connection) => Self::deregister_poll_with_source(poll, connection),
+            Connection::Udp(connection) => Self::deregister_poll_with_source(poll, connection),
         }
     }
 
     pub(crate) fn write(&mut self, bytes: &[u8]) -> Result<usize> {
         match &mut self.connection {
-            Type::Tcp(connection) => connection.write(bytes),
-            Type::Udp(connection) => connection.write(bytes),
+            Connection::Tcp(connection) => connection.write(bytes),
+            Connection::Udp(connection) => connection.write(bytes),
         }
     }
 
     pub(crate) fn read(&mut self) -> Result<(Vec<u8>, bool)> {
         match &mut self.connection {
-            Type::Tcp(connection) => Self::read_all(connection),
-            Type::Udp(connection) => Self::read_all(connection),
+            Connection::Tcp(connection) => Self::read_all(connection),
+            Connection::Udp(connection) => Self::read_all(connection),
         }
     }
 
     pub(crate) fn close(&self) {
         match &self.connection {
-            Type::Tcp(connection) => {
+            Connection::Tcp(connection) => {
                 if let Err(error) = connection.shutdown(Shutdown::Both) {
                     log::trace!("failed to shutdown tcp stream, error={:?}", error);
                 }
             }
-            Type::Udp(_) => {
+            Connection::Udp(_) => {
                 // UDP connections do not require to be closed.
             }
         }
@@ -137,25 +143,24 @@ impl Socket {
         socket
     }
 
-    fn create_connection(protocol: &Protocol, socket: &socket2::Socket) -> Type {
+    fn create_connection(protocol: &Protocol, socket: &socket2::Socket) -> Connection {
         match protocol {
             Protocol::Tcp => {
                 let tcp_stream = unsafe { TcpStream::from_raw_fd(socket.as_raw_fd()) };
-                Type::Tcp(tcp_stream)
+                Connection::Tcp(tcp_stream)
             }
             Protocol::Udp => {
                 let udp_socket = unsafe { UdpSocket::from_raw_fd(socket.as_raw_fd()) };
-                Type::Udp(udp_socket)
+                Connection::Udp(udp_socket)
             }
         }
     }
 
-    fn register_poll_with_source<S>(poll: &mut Poll, source: &mut S, token: Token) -> std::io::Result<()>
+    fn register_poll_with_source<S>(poll: &mut Poll, source: &mut S, token: Token, interests: Interest) -> std::io::Result<()>
     where
         S: Source,
     {
-        poll.registry()
-            .register(source, token, Interest::READABLE | Interest::WRITABLE)
+        poll.registry().register(source, token, interests)
     }
 
     fn deregister_poll_with_source<S>(poll: &mut Poll, source: &mut S) -> std::io::Result<()>

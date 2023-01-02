@@ -33,7 +33,13 @@ pub(crate) struct SessionInfo {
     pub(crate) src_port: u16,
     pub(crate) dst_ip: [u8; 4],
     pub(crate) dst_port: u16,
-    pub(crate) protocol: u8,
+    pub(crate) protocol: SessionProtocol,
+}
+
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+pub(crate) enum SessionProtocol {
+    Tcp,
+    Udp,
 }
 
 impl SessionInfo {
@@ -50,7 +56,7 @@ impl SessionInfo {
                         src_port: tcp_packet.src_port(),
                         dst_ip: dst_ip_bytes,
                         dst_port: tcp_packet.dst_port(),
-                        protocol: u8::from(ip_packet.protocol()),
+                        protocol: SessionProtocol::Tcp,
                     });
                 }
                 IpProtocol::Udp => {
@@ -63,7 +69,7 @@ impl SessionInfo {
                         src_port: udp_packet.src_port(),
                         dst_ip: dst_ip_bytes,
                         dst_port: udp_packet.dst_port(),
-                        protocol: u8::from(ip_packet.protocol()),
+                        protocol: SessionProtocol::Udp,
                     });
                 }
                 _ => {
@@ -89,7 +95,8 @@ impl fmt::Display for SessionInfo {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "{}:{}->{}:{}",
+            "[{:?}]{}:{}->{}:{}",
+            &self.protocol,
             ip_octet_to_string(&self.src_ip),
             self.src_port,
             ip_octet_to_string(&self.dst_ip),
