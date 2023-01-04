@@ -23,70 +23,116 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
+use smoltcp::wire::{IpProtocol, Ipv4Packet, Ipv6Packet, TcpPacket, UdpPacket};
 use std::fmt;
 use std::hash::Hash;
+use std::net::SocketAddr;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub(crate) struct SessionInfo {
-    pub(crate) src_ip: [u8; 4],
-    pub(crate) src_port: u16,
-    pub(crate) dst_ip: [u8; 4],
-    pub(crate) dst_port: u16,
-    pub(crate) protocol: SessionProtocol,
+    pub(crate) source: SocketAddr,
+    pub(crate) destination: SocketAddr,
+    pub(crate) transport_protocol: TransportProtocol,
+    pub(crate) internet_protocol: InternetProtocol,
 }
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
-pub(crate) enum SessionProtocol {
+pub(crate) enum TransportProtocol {
     Tcp,
     Udp,
 }
 
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+pub(crate) enum InternetProtocol {
+    Ipv4,
+    Ipv6,
+}
+
 impl SessionInfo {
     pub(crate) fn new(bytes: &Vec<u8>) -> Option<SessionInfo> {
-        match Ipv4Packet::new_checked(&bytes) {
-            Ok(ip_packet) => match ip_packet.protocol() {
+        Self::new_ipv4(bytes)
+            .or_else(|| Self::new_ipv6(bytes))
+            .or_else(|| {
+                log::error!("failed to create session info, len={:?}", bytes.len(),);
+                None
+            })
+    }
+
+    fn new_ipv4(bytes: &Vec<u8>) -> Option<SessionInfo> {
+        if let Ok(ip_packet) = Ipv4Packet::new_checked(&bytes) {
+            match ip_packet.protocol() {
                 IpProtocol::Tcp => {
                     let payload = ip_packet.payload();
-                    let tcp_packet = TcpPacket::new_checked(payload).unwrap();
-                    let src_ip_bytes = ip_packet.src_addr().as_bytes().try_into().unwrap();
-                    let dst_ip_bytes = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    let packet = TcpPacket::new_checked(payload).unwrap();
+                    let source_ip: [u8; 4] = ip_packet.src_addr().as_bytes().try_into().unwrap();
+                    let destination_ip: [u8; 4] = ip_packet.dst_addr().as_bytes().try_into().unwrap();
                     return Some(SessionInfo {
-                        src_ip: src_ip_bytes,
-                        src_port: tcp_packet.src_port(),
-                        dst_ip: dst_ip_bytes,
-                        dst_port: tcp_packet.dst_port(),
-                        protocol: SessionProtocol::Tcp,
+                        source: SocketAddr::from((source_ip, packet.src_port())),
+                        destination: SocketAddr::from((destination_ip, packet.dst_port())),
+                        transport_protocol: TransportProtocol::Tcp,
+                        internet_protocol: InternetProtocol::Ipv4,
                     });
                 }
                 IpProtocol::Udp => {
                     let payload = ip_packet.payload();
-                    let udp_packet = UdpPacket::new_checked(payload).unwrap();
-                    let src_ip_bytes = ip_packet.src_addr().as_bytes().try_into().unwrap();
-                    let dst_ip_bytes = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    let packet = UdpPacket::new_checked(payload).unwrap();
+                    let source_ip: [u8; 4] = ip_packet.src_addr().as_bytes().try_into().unwrap();
+                    let destination_ip: [u8; 4] = ip_packet.dst_addr().as_bytes().try_into().unwrap();
                     return Some(SessionInfo {
-                        src_ip: src_ip_bytes,
-                        src_port: udp_packet.src_port(),
-                        dst_ip: dst_ip_bytes,
-                        dst_port: udp_packet.dst_port(),
-                        protocol: SessionProtocol::Udp,
+                        source: SocketAddr::from((source_ip, packet.src_port())),
+                        destination: SocketAddr::from((destination_ip, packet.dst_port())),
+                        transport_protocol: TransportProtocol::Udp,
+                        internet_protocol: InternetProtocol::Ipv4,
                     });
                 }
                 _ => {
                     log::warn!(
                         "unsupported transport protocol, protocol=${:?}",
                         ip_packet.protocol()
-                    )
+                    );
+                    return None;
                 }
-            },
-            Err(error) => {
-                log::error!(
-                    "failed to build session, len={:?}, error={:?}",
-                    bytes.len(),
-                    error
-                );
             }
         }
+
+        None
+    }
+
+    fn new_ipv6(bytes: &Vec<u8>) -> Option<SessionInfo> {
+        if let Ok(ip_packet) = Ipv6Packet::new_checked(&bytes) {
+            let protocol = ip_packet.next_header();
+            match protocol {
+                IpProtocol::Tcp => {
+                    let payload = ip_packet.payload();
+                    let packet = TcpPacket::new_checked(payload).unwrap();
+                    let source_ip: [u8; 16] = ip_packet.src_addr().as_bytes().try_into().unwrap();
+                    let destination_ip: [u8; 16] = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    return Some(SessionInfo {
+                        source: SocketAddr::from((source_ip, packet.src_port())),
+                        destination: SocketAddr::from((destination_ip, packet.dst_port())),
+                        transport_protocol: TransportProtocol::Tcp,
+                        internet_protocol: InternetProtocol::Ipv6,
+                    });
+                }
+                IpProtocol::Udp => {
+                    let payload = ip_packet.payload();
+                    let packet = UdpPacket::new_checked(payload).unwrap();
+                    let source_ip: [u8; 16] = ip_packet.src_addr().as_bytes().try_into().unwrap();
+                    let destination_ip: [u8; 16] = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    return Some(SessionInfo {
+                        source: SocketAddr::from((source_ip, packet.src_port())),
+                        destination: SocketAddr::from((destination_ip, packet.dst_port())),
+                        transport_protocol: TransportProtocol::Udp,
+                        internet_protocol: InternetProtocol::Ipv6,
+                    });
+                }
+                _ => {
+                    log::warn!("unsupported transport protocol, protocol=${:?}", protocol);
+                    return None;
+                }
+            }
+        }
+
         None
     }
 }
@@ -95,16 +141,13 @@ impl fmt::Display for SessionInfo {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "[{:?}]{}:{}->{}:{}",
-            &self.protocol,
-            ip_octet_to_string(&self.src_ip),
-            self.src_port,
-            ip_octet_to_string(&self.dst_ip),
-            self.dst_port
+            "[{:?}][{:?}]{}:{}->{}:{}",
+            self.internet_protocol,
+            self.transport_protocol,
+            self.source.ip(),
+            self.source.port(),
+            self.destination.ip(),
+            self.destination.port()
         )
     }
-}
-
-fn ip_octet_to_string(ip: &[u8; 4]) -> String {
-    ip.iter().map(|&i| i.to_string() + ".").collect()
 }

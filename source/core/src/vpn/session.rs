@@ -24,15 +24,14 @@
 // For more information, please refer to <https://unlicense.org>
 
 use super::buffers::Buffers;
-use super::mio_socket::{Protocol as MioProtocol, Socket as MioSocket};
-use super::session_info::{SessionInfo, SessionProtocol};
-use super::smoltcp_socket::{Protocol as SmoltcpProtocol, Socket as SmoltcpSocket};
+use super::mio_socket::{InternetProtocol as MioInternetProtocol, Socket as MioSocket, TransportProtocol as MioTransportProtocol};
+use super::session_info::{InternetProtocol, SessionInfo, TransportProtocol};
+use super::smoltcp_socket::{Socket as SmoltcpSocket, TransportProtocol as SmoltcpProtocol};
 use super::vpn_device::VpnDevice;
 use mio::{Poll, Token};
 use smoltcp::iface::{Interface, InterfaceBuilder, Routes};
 use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
 use std::collections::btree_map::BTreeMap;
-use std::net::SocketAddr;
 
 pub(crate) struct Session<'a> {
     pub(crate) smoltcp_socket: SmoltcpSocket,
@@ -58,27 +57,35 @@ impl<'a> Session<'a> {
     }
 
     fn create_smoltcp_socket(session_info: &SessionInfo, interface: &mut Interface<VpnDevice>) -> Option<SmoltcpSocket> {
-        let local_address = SocketAddr::from((session_info.src_ip, session_info.src_port));
-
-        let remote_address = SocketAddr::from((session_info.dst_ip, session_info.dst_port));
-
-        let protocol = match session_info.protocol {
-            SessionProtocol::Tcp => SmoltcpProtocol::Tcp,
-            SessionProtocol::Udp => SmoltcpProtocol::Udp,
+        let transport_protocol = match session_info.transport_protocol {
+            TransportProtocol::Tcp => SmoltcpProtocol::Tcp,
+            TransportProtocol::Udp => SmoltcpProtocol::Udp,
         };
 
-        SmoltcpSocket::new(protocol, local_address, remote_address, interface)
+        SmoltcpSocket::new(
+            transport_protocol,
+            session_info.source,
+            session_info.destination,
+            interface,
+        )
     }
 
     fn create_mio_socket(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<MioSocket> {
-        let remote_address = SocketAddr::from((session_info.dst_ip, session_info.dst_port));
-
-        let protocol = match session_info.protocol {
-            SessionProtocol::Tcp => MioProtocol::Tcp,
-            SessionProtocol::Udp => MioProtocol::Udp,
+        let transport_protocol = match session_info.transport_protocol {
+            TransportProtocol::Tcp => MioTransportProtocol::Tcp,
+            TransportProtocol::Udp => MioTransportProtocol::Udp,
         };
 
-        let mut mio_socket = MioSocket::new(protocol, remote_address)?;
+        let internet_protocol = match session_info.internet_protocol {
+            InternetProtocol::Ipv4 => MioInternetProtocol::Ipv4,
+            InternetProtocol::Ipv6 => MioInternetProtocol::Ipv6,
+        };
+
+        let mut mio_socket = MioSocket::new(
+            transport_protocol,
+            internet_protocol,
+            session_info.destination,
+        )?;
 
         if let Err(error) = mio_socket.register_poll(poll, token) {
             log::error!("failed to register poll, error={:?}", error);

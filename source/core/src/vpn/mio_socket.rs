@@ -31,9 +31,14 @@ use std::io::{ErrorKind, Result};
 use std::net::{Shutdown, SocketAddr};
 use std::os::unix::io::{AsRawFd, FromRawFd};
 
-pub(crate) enum Protocol {
+pub(crate) enum TransportProtocol {
     Tcp,
     Udp,
+}
+
+pub(crate) enum InternetProtocol {
+    Ipv4,
+    Ipv6,
 }
 
 pub(crate) struct Socket {
@@ -47,8 +52,8 @@ enum Connection {
 }
 
 impl Socket {
-    pub(crate) fn new(protocol: Protocol, remote_address: SocketAddr) -> Option<Socket> {
-        let socket = Self::create_socket(&protocol);
+    pub(crate) fn new(transport_protocol: TransportProtocol, internet_protocol: InternetProtocol, remote_address: SocketAddr) -> Option<Socket> {
+        let socket = Self::create_socket(&transport_protocol, &internet_protocol);
 
         on_socket_created(socket.as_raw_fd());
 
@@ -74,7 +79,7 @@ impl Socket {
             }
         }
 
-        let connection = Self::create_connection(&protocol, &socket);
+        let connection = Self::create_connection(&transport_protocol, &socket);
 
         Some(Socket {
             _socket: socket,
@@ -129,27 +134,36 @@ impl Socket {
         }
     }
 
-    fn create_socket(protocol: &Protocol) -> socket2::Socket {
-        let socket_protocol = match protocol {
-            Protocol::Tcp => socket2::Protocol::TCP,
-            Protocol::Udp => socket2::Protocol::UDP,
+    fn create_socket(transport_protocol: &TransportProtocol, internet_protocol: &InternetProtocol) -> socket2::Socket {
+        let domain = match internet_protocol {
+            InternetProtocol::Ipv4 => socket2::Domain::IPV4,
+            InternetProtocol::Ipv6 => socket2::Domain::IPV6,
         };
-        let socket_type = match protocol {
-            Protocol::Tcp => socket2::Type::STREAM,
-            Protocol::Udp => socket2::Type::DGRAM,
+
+        let protocol = match transport_protocol {
+            TransportProtocol::Tcp => socket2::Protocol::TCP,
+            TransportProtocol::Udp => socket2::Protocol::UDP,
         };
-        let socket = socket2::Socket::new(socket2::Domain::IPV4, socket_type, Some(socket_protocol)).unwrap();
+
+        let socket_type = match transport_protocol {
+            TransportProtocol::Tcp => socket2::Type::STREAM,
+            TransportProtocol::Udp => socket2::Type::DGRAM,
+        };
+
+        let socket = socket2::Socket::new(domain, socket_type, Some(protocol)).unwrap();
+
         socket.set_nonblocking(true).unwrap();
+
         socket
     }
 
-    fn create_connection(protocol: &Protocol, socket: &socket2::Socket) -> Connection {
-        match protocol {
-            Protocol::Tcp => {
+    fn create_connection(transport_protocol: &TransportProtocol, socket: &socket2::Socket) -> Connection {
+        match transport_protocol {
+            TransportProtocol::Tcp => {
                 let tcp_stream = unsafe { TcpStream::from_raw_fd(socket.as_raw_fd()) };
                 Connection::Tcp(tcp_stream)
             }
-            Protocol::Udp => {
+            TransportProtocol::Udp => {
                 let udp_socket = unsafe { UdpSocket::from_raw_fd(socket.as_raw_fd()) };
                 Connection::Udp(udp_socket)
             }

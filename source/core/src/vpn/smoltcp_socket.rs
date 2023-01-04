@@ -29,37 +29,42 @@ use smoltcp::socket::{TcpSocket, TcpSocketBuffer, UdpPacketMetadata, UdpSocket, 
 use smoltcp::wire::IpEndpoint;
 use std::net::SocketAddr;
 
-pub(crate) enum Protocol {
+pub(crate) enum TransportProtocol {
     Tcp,
     Udp,
 }
 
 pub(crate) struct Socket {
     socket_handle: SocketHandle,
-    protocol: Protocol,
+    transport_protocol: TransportProtocol,
     local_endpoint: IpEndpoint,
 }
 
 impl Socket {
-    pub(crate) fn new(protocol: Protocol, local_address: SocketAddr, remote_address: SocketAddr, interface: &mut Interface<VpnDevice>) -> Option<Socket> {
+    pub(crate) fn new(
+        transport_protocol: TransportProtocol,
+        local_address: SocketAddr,
+        remote_address: SocketAddr,
+        interface: &mut Interface<VpnDevice>,
+    ) -> Option<Socket> {
         let local_endpoint = IpEndpoint::from(local_address);
 
         let remote_endpoint = IpEndpoint::from(remote_address);
 
-        let socket_handle = match protocol {
-            Protocol::Tcp => {
+        let socket_handle = match transport_protocol {
+            TransportProtocol::Tcp => {
                 let socket = Self::create_tcp_socket(remote_endpoint).unwrap();
                 interface.add_socket(socket)
             }
-            Protocol::Udp => {
+            TransportProtocol::Udp => {
                 let socket = Self::create_udp_socket(remote_endpoint).unwrap();
                 interface.add_socket(socket)
             }
         };
 
         let socket = Socket {
-            protocol,
             socket_handle,
+            transport_protocol,
             local_endpoint,
         };
 
@@ -103,12 +108,12 @@ impl Socket {
     }
 
     pub(crate) fn get<'a, 'b>(&self, interface: &'b mut Interface<'a, VpnDevice>) -> SocketInstance<'a, 'b> {
-        let socket = match self.protocol {
-            Protocol::Tcp => {
+        let socket = match self.transport_protocol {
+            TransportProtocol::Tcp => {
                 let socket = interface.get_socket::<TcpSocket>(self.socket_handle);
                 SocketType::Tcp(socket)
             }
-            Protocol::Udp => {
+            TransportProtocol::Udp => {
                 let socket = interface.get_socket::<UdpSocket>(self.socket_handle);
                 SocketType::Udp(socket, self.local_endpoint)
             }
