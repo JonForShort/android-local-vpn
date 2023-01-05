@@ -24,7 +24,6 @@
 // For more information, please refer to <https://unlicense.org>
 
 use crate::tun_callbacks::on_socket_created;
-use mio::event::Source;
 use mio::net::{TcpStream, UdpSocket};
 use mio::{Interest, Poll, Token};
 use std::io::{ErrorKind, Result};
@@ -91,19 +90,19 @@ impl Socket {
         match &mut self.connection {
             Connection::Tcp(connection) => {
                 let interests = Interest::READABLE | Interest::WRITABLE;
-                Self::register_poll_with_source(poll, connection, token, interests)
+                poll.registry().register(connection, token, interests)
             }
             Connection::Udp(connection) => {
                 let interests = Interest::READABLE;
-                Self::register_poll_with_source(poll, connection, token, interests)
+                poll.registry().register(connection, token, interests)
             }
         }
     }
 
     pub(crate) fn deregister_poll(&mut self, poll: &mut Poll) -> std::io::Result<()> {
         match &mut self.connection {
-            Connection::Tcp(connection) => Self::deregister_poll_with_source(poll, connection),
-            Connection::Udp(connection) => Self::deregister_poll_with_source(poll, connection),
+            Connection::Tcp(connection) => poll.registry().deregister(connection),
+            Connection::Udp(connection) => poll.registry().deregister(connection),
         }
     }
 
@@ -168,20 +167,6 @@ impl Socket {
                 Connection::Udp(udp_socket)
             }
         }
-    }
-
-    fn register_poll_with_source<S>(poll: &mut Poll, source: &mut S, token: Token, interests: Interest) -> std::io::Result<()>
-    where
-        S: Source,
-    {
-        poll.registry().register(source, token, interests)
-    }
-
-    fn deregister_poll_with_source<S>(poll: &mut Poll, source: &mut S) -> std::io::Result<()>
-    where
-        S: Source,
-    {
-        poll.registry().deregister(source)
     }
 
     fn read_all<R>(reader: &mut R) -> Result<(Vec<u8>, bool)>
