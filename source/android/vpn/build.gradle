@@ -19,8 +19,8 @@ plugins {
 ext {
     groupId = "com.github.jonforshort"
     artifactId = "android-local-vpn"
-    versionCode = 1
-    versionName = "0.1." + versionCode
+    versionCode = 0
+    versionName = "0.2." + versionCode
     libraryName = "AndroidLocalVpn"
     libraryDescription = "Local VPN For Android"
 }
