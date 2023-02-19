@@ -31,25 +31,29 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
+import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnService.Companion.INTENT_ACTION_START_VPN
+import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnService.Companion.INTENT_ACTION_STOP_VPN
+import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnService.Companion.INTENT_EXTRA_CONFIGURATION
 import timber.log.Timber.e
 import java.io.IOException
 import java.net.NetworkInterface
 
-fun startVpn(context: Context) {
+internal fun startVpn(context: Context, configuration: LocalVpnConfiguration) {
     val intent = Intent(context, LocalVpnService::class.java).apply {
-        action = "START_VPN"
+        action = INTENT_ACTION_START_VPN
+        putExtra(INTENT_EXTRA_CONFIGURATION, configuration)
     }
     context.startService(intent)
 }
 
-fun stopVpn(context: Context) {
+internal fun stopVpn(context: Context) {
     val intent = Intent(context, LocalVpnService::class.java).apply {
-        action = "STOP_VPN"
+        action = INTENT_ACTION_STOP_VPN
     }
     context.startService(intent)
 }
 
-fun isVpnRunning(context: Context) = isVpnTunnelUp() && isVpnServiceRunning(context)
+internal fun isVpnRunning(context: Context) = isVpnTunnelUp() && isVpnServiceRunning(context)
 
 @Suppress("DEPRECATION")
 private fun isVpnServiceRunning(context: Context) =
@@ -67,7 +71,7 @@ private fun isVpnTunnelUp(): Boolean {
     return false
 }
 
-class LocalVpnService : VpnService() {
+internal class LocalVpnService : VpnService() {
 
     private lateinit var vpnInterface: ParcelFileDescriptor
 
@@ -75,14 +79,25 @@ class LocalVpnService : VpnService() {
         private const val VPN_ADDRESS = "10.0.0.2"
         private const val VPN_ROUTE = "0.0.0.0"
 
+        internal const val INTENT_ACTION_START_VPN = "LocalVpnServiceStartVpn"
+        internal const val INTENT_ACTION_STOP_VPN = "LocalVpnServiceStopVpn"
+        internal const val INTENT_EXTRA_CONFIGURATION = "LocalVpnServiceConfiguration"
+
         init {
             System.loadLibrary("vpn")
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "STOP_VPN") {
-            stopVpn()
+        when (intent?.action) {
+            INTENT_ACTION_START_VPN -> {
+                val configuration = intent.getParcelableExtra(INTENT_EXTRA_CONFIGURATION)
+                    ?: LocalVpnConfiguration()
+                startVpn(configuration)
+            }
+            INTENT_ACTION_STOP_VPN -> {
+                stopVpn()
+            }
         }
         return START_STICKY
     }
@@ -98,17 +113,25 @@ class LocalVpnService : VpnService() {
         stopSelf()
     }
 
-    override fun onCreate() {
-        super.onCreate()
-        setUpVpnInterface()
+    private fun startVpn(configuration: LocalVpnConfiguration) {
+        setUpVpnInterface(configuration)
         onCreateNative(this)
         onStartVpn(vpnInterface.detachFd())
     }
 
-    private fun setUpVpnInterface() {
-        val vpnServiceBuilder = super.Builder()
-        vpnServiceBuilder.addAddress(VPN_ADDRESS, 32)
-        vpnServiceBuilder.addRoute(VPN_ROUTE, 0)
+    private fun setUpVpnInterface(configuration: LocalVpnConfiguration) {
+        val vpnServiceBuilder = super.Builder().apply {
+            addAddress(VPN_ADDRESS, 32)
+            addRoute(VPN_ROUTE, 0)
+        }
+
+        configuration.allowedApps?.forEach {
+            vpnServiceBuilder.addAllowedApplication(it.packageName)
+        }
+
+        configuration.disallowedApps?.forEach {
+            vpnServiceBuilder.addDisallowedApplication(it.packageName)
+        }
 
         vpnInterface = vpnServiceBuilder
             .setBlocking(false)

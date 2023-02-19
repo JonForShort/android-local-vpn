@@ -24,39 +24,17 @@
 //
 // For more information, please refer to <https://unlicense.org>
 //
-package com.github.jonforshort.androidlocalvpn.ui.main
+package com.github.jonforshort.androidlocalvpn.vpn
 
-import android.os.Bundle
-import androidx.activity.compose.setContent
-import androidx.compose.runtime.livedata.observeAsState
-import androidx.lifecycle.MutableLiveData
-import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnActivity
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
 
-class MainActivity : LocalVpnActivity() {
+@Parcelize
+data class LocalVpnConfiguration(
+    val allowedApps: List<PackageName>? = null,
+    val disallowedApps: List<PackageName>? = null
+) : Parcelable
 
-    private val vpnState = MutableLiveData(false)
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            MainScreen(
-                vpnState.observeAsState(),
-                ::onVpnStateChanged
-            )
-        }
-
-        vpnState.postValue(isVpnRunning())
-    }
-
-    private fun onVpnStateChanged(vpnEnabled: Boolean) =
-        if (vpnEnabled) {
-            startVpn()
-        } else {
-            stopVpn()
-        }
-
-    override fun onVpnStarted() = vpnState.postValue(true)
-
-    override fun onVpnStopped() = vpnState.postValue(false)
-}
-
+@JvmInline
+@Parcelize
+value class PackageName(val packageName: String) : Parcelable

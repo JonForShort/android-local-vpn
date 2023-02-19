@@ -49,30 +49,39 @@ internal fun MainScreen(
     isVpnEnabled: State<Boolean?> = mutableStateOf(false),
     onVpnEnabledChanged: (Boolean) -> Unit
 ) {
+    val tabs = listOf(
+        MainScreenTab(
+            tabName = "SETTINGS",
+            tabIcon = Icons.Filled.Settings,
+            tab = {
+                SettingsTab(
+                    isVpnEnabled,
+                    onVpnEnabledChanged
+                )
+            }
+        ),
+        MainScreenTab(
+            tabName = "TEST",
+            tabIcon = Icons.Filled.Send,
+            tab = { TestTab() }
+        ),
+    )
+
     AndroidLocalVpnTheme {
         Surface(color = MaterialTheme.colors.background) {
             MainView(
-                tabData = listOf(
-                    "TEST" to Icons.Filled.Send,
-                    "SETTINGS" to Icons.Filled.Settings,
-                ),
-                onTabDisplayed = { index ->
-                    when (index) {
-                        0 -> {
-                            TestTab()
-                        }
-                        1 -> {
-                            SettingsTab(
-                                isVpnEnabled,
-                                onVpnEnabledChanged
-                            )
-                        }
-                    }
-                }
+                tabData = tabs.map { it.tabName to it.tabIcon },
+                onTabDisplayed = { tabs[it].tab() }
             )
         }
     }
 }
+
+private data class MainScreenTab(
+    val tabName: String,
+    val tabIcon: ImageVector,
+    val tab: @Composable () -> Unit
+)
 
 @OptIn(ExperimentalPagerApi::class)
 @Composable
