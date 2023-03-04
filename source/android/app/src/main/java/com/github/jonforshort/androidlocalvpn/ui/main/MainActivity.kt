@@ -31,29 +31,58 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.lifecycle.MutableLiveData
 import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnActivity
+import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnConfiguration
+import com.github.jonforshort.androidlocalvpn.vpn.PackageName
 
 class MainActivity : LocalVpnActivity() {
 
     private val vpnState = MutableLiveData(false)
 
+    private lateinit var mainViewModel: MainViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        mainViewModel = MainViewModel(application)
+
         setContent {
             MainScreen(
-                vpnState.observeAsState(),
-                ::onVpnStateChanged
+                mainViewModel = mainViewModel,
+                isVpnEnabled = vpnState.observeAsState(),
+                onVpnEnabledChanged = ::onVpnStateChanged
             )
         }
 
         vpnState.postValue(isVpnRunning())
     }
 
+    override fun onResume() {
+        super.onResume()
+        mainViewModel.refresh()
+    }
+
     private fun onVpnStateChanged(vpnEnabled: Boolean) =
         if (vpnEnabled) {
-            startVpn()
+            val configuration = buildConfiguration()
+            startVpn(configuration)
         } else {
             stopVpn()
         }
+
+    private fun buildConfiguration(): LocalVpnConfiguration {
+        val allowedApps = mutableListOf<PackageName>()
+        val disallowedApps = mutableListOf<PackageName>()
+
+        mainViewModel.applicationSettings.value.forEach {
+            when (it.policy) {
+                VpnPolicy.ALLOW -> allowedApps.add(PackageName(it.packageName))
+                VpnPolicy.DISALLOW -> disallowedApps.add(PackageName(it.packageName))
+                else -> {}
+            }
+        }
+
+        return LocalVpnConfiguration(allowedApps, disallowedApps)
+    }
 
     override fun onVpnStarted() = vpnState.postValue(true)
 

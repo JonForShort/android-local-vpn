@@ -27,33 +27,58 @@
 package com.github.jonforshort.androidlocalvpn.ui.main
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Switch
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
+import com.github.jonforshort.androidlocalvpn.ui.theme.AndroidLocalVpnTheme
 
 @Composable
-internal fun SettingsTab(
-    isVpnEnabled: State<Boolean?> = mutableStateOf(false),
-    onVpnEnabledChanged: (Boolean) -> Unit = {}
+internal fun ControlTab(
+    isVpnEnabled: Boolean,
+    onVpnEnabledChanged: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        EnableVpnToggle(
+            isVpnEnabled, onVpnEnabledChanged
+        )
+    }
+}
+
+@Composable
+private fun EnableVpnToggle(
+    isVpnEnabled: Boolean,
+    onVpnEnabledChanged: (Boolean) -> Unit
 ) {
     Row(
         modifier = Modifier
             .height(IntrinsicSize.Max)
-            .padding(10.dp)
-            .fillMaxWidth(),
+            .fillMaxSize(),
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
-    )
-    {
+    ) {
         Text(
             text = "Enable VPN",
+            style = MaterialTheme.typography.h4
         )
         Switch(
-            checked = isVpnEnabled.value ?: false,
+            checked = isVpnEnabled,
             onCheckedChange = { onVpnEnabledChanged(it) },
+        )
+    }
+}
+
+@Preview
+@Composable
+fun ControlsTabPreview() {
+    AndroidLocalVpnTheme {
+        ControlTab(
+            isVpnEnabled = false,
+            onVpnEnabledChanged = {},
         )
     }
 }

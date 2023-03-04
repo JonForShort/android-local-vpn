@@ -47,9 +47,8 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 
 @Composable
-internal fun TestTab() {
-
-    Column {
+internal fun TestTab(modifier: Modifier = Modifier) {
+    Column(modifier = modifier) {
         TestHtmlQuery(
             text = "Google (HTTP)",
             url = "http://google.com/"

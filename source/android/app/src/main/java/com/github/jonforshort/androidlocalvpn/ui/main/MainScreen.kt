@@ -29,6 +29,7 @@ package com.github.jonforshort.androidlocalvpn.ui.main
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.*
@@ -36,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.jonforshort.androidlocalvpn.ui.theme.AndroidLocalVpnTheme
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.HorizontalPager
@@ -46,36 +49,76 @@ import org.xbill.DNS.*
 
 @Composable
 internal fun MainScreen(
-    isVpnEnabled: State<Boolean?> = mutableStateOf(false),
+    mainViewModel: MainViewModel = viewModel(),
+    isVpnEnabled: State<Boolean?>,
     onVpnEnabledChanged: (Boolean) -> Unit
 ) {
     val tabs = listOf(
-        MainScreenTab(
-            tabName = "SETTINGS",
-            tabIcon = Icons.Filled.Settings,
-            tab = {
-                SettingsTab(
-                    isVpnEnabled,
-                    onVpnEnabledChanged
-                )
-            }
-        ),
-        MainScreenTab(
-            tabName = "TEST",
-            tabIcon = Icons.Filled.Send,
-            tab = { TestTab() }
-        ),
+        controlTab(isVpnEnabled, onVpnEnabledChanged),
+        policyTab(mainViewModel),
+        testTab()
     )
 
     AndroidLocalVpnTheme {
         Surface(color = MaterialTheme.colors.background) {
             MainView(
-                tabData = tabs.map { it.tabName to it.tabIcon },
+                tabData = tabs.map { it.tabName.uppercase() to it.tabIcon },
                 onTabDisplayed = { tabs[it].tab() }
             )
         }
     }
 }
+
+@Composable
+private fun controlTab(
+    isVpnEnabled: State<Boolean?>,
+    onVpnEnabledChanged: (Boolean) -> Unit
+) = MainScreenTab(
+    tabName = "Control",
+    tabIcon = Icons.Filled.Settings,
+    tab = {
+        ControlTab(
+            isVpnEnabled = isVpnEnabled.value ?: false,
+            onVpnEnabledChanged = onVpnEnabledChanged,
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxWidth()
+        )
+    }
+)
+
+@Composable
+private fun policyTab(
+    mainViewModel: MainViewModel
+) = MainScreenTab(
+    tabName = "Policy",
+    tabIcon = Icons.Filled.Build,
+    tab = {
+        PolicyTab(
+            mainViewModel.applicationSettings.collectAsState(),
+            onResetApplicationSettings = { mainViewModel.clear() },
+            onApplicationSettingTapped = { newPolicy, applicationSettings ->
+                mainViewModel.adjustApplicationSettings(newPolicy, applicationSettings)
+            },
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxWidth()
+        )
+    }
+)
+
+@Composable
+private fun testTab() = MainScreenTab(
+    tabName = "Test",
+    tabIcon = Icons.Filled.Send,
+    tab = {
+        TestTab(
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxWidth()
+        )
+    }
+)
 
 private data class MainScreenTab(
     val tabName: String,
@@ -102,15 +145,18 @@ private fun MainView(
             }
         ) {
             tabData.forEachIndexed { index, pair ->
-                Tab(selected = tabIndex == index, onClick = {
-                    coroutineScope.launch {
-                        pagerState.animateScrollToPage(index)
-                    }
-                }, text = {
-                    Text(text = pair.first)
-                }, icon = {
-                    Icon(imageVector = pair.second, contentDescription = null)
-                })
+                Tab(selected = tabIndex == index,
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(index)
+                        }
+                    },
+                    text = {
+                        Text(text = pair.first)
+                    },
+                    icon = {
+                        Icon(imageVector = pair.second, contentDescription = null)
+                    })
             }
         }
         HorizontalPager(

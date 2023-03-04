@@ -91,9 +91,7 @@ internal class LocalVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             INTENT_ACTION_START_VPN -> {
-                val configuration = intent.getParcelableExtra(INTENT_EXTRA_CONFIGURATION)
-                    ?: LocalVpnConfiguration()
-                startVpn(configuration)
+                startVpn(configuration = intent.getParcelableExtra(INTENT_EXTRA_CONFIGURATION))
             }
             INTENT_ACTION_STOP_VPN -> {
                 stopVpn()
@@ -113,23 +111,23 @@ internal class LocalVpnService : VpnService() {
         stopSelf()
     }
 
-    private fun startVpn(configuration: LocalVpnConfiguration) {
+    private fun startVpn(configuration: LocalVpnConfiguration?) {
         setUpVpnInterface(configuration)
         onCreateNative(this)
         onStartVpn(vpnInterface.detachFd())
     }
 
-    private fun setUpVpnInterface(configuration: LocalVpnConfiguration) {
+    private fun setUpVpnInterface(configuration: LocalVpnConfiguration?) {
         val vpnServiceBuilder = super.Builder().apply {
             addAddress(VPN_ADDRESS, 32)
             addRoute(VPN_ROUTE, 0)
         }
 
-        configuration.allowedApps?.forEach {
+        configuration?.allowedApps?.forEach {
             vpnServiceBuilder.addAllowedApplication(it.packageName)
         }
 
-        configuration.disallowedApps?.forEach {
+        configuration?.disallowedApps?.forEach {
             vpnServiceBuilder.addDisallowedApplication(it.packageName)
         }
 
