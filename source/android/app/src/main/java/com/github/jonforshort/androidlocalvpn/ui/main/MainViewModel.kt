@@ -37,20 +37,37 @@ import kotlinx.coroutines.flow.asStateFlow
 internal class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val applicationSettingsStore =
-        application.getSharedPreferences(SHARED_PREFERENCES_KEY, Context.MODE_PRIVATE)
+        application.getSharedPreferences(
+            SHARED_PREFERENCES_APPLICATION_SETTINGS_KEY,
+            Context.MODE_PRIVATE
+        )
+
+    private val vpnPolicySettingsStore =
+        application.getSharedPreferences(SHARED_PREFERENCES_VPN_POLICY_KEY, Context.MODE_PRIVATE)
 
     private val _applicationsSettingsState =
-        MutableStateFlow<List<ApplicationSettings>>(emptyList())
+        MutableStateFlow(emptyList<ApplicationSettings>())
 
     val applicationSettings: StateFlow<List<ApplicationSettings>>
         get() = _applicationsSettingsState.asStateFlow()
 
+    private val _vpnPolicy =
+        MutableStateFlow(VpnPolicy.DEFAULT)
+
+    val vpnPolicy: StateFlow<VpnPolicy>
+        get() = _vpnPolicy.asStateFlow()
+
     fun refresh() {
         _applicationsSettingsState.value = getInstalledApplications()
+        _vpnPolicy.value = vpnPolicySettingsStore.getString(SHARED_PREFERENCES_VPN_POLICY_KEY, null)
+            ?.let { VpnPolicy.valueOf(it) }
+            ?: VpnPolicy.DEFAULT
     }
 
-    fun clear() {
+    fun reset() {
         applicationSettingsStore.edit().clear().apply()
+        vpnPolicySettingsStore.edit().clear().apply()
+
         refresh()
     }
 
@@ -79,15 +96,25 @@ internal class MainViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun adjustApplicationSettings(newPolicy: VpnPolicy, applicationSettings: ApplicationSettings) {
-        applicationSettingsStore.edit()
-            .putString(applicationSettings.packageName, newPolicy.name)
+    fun adjustApplicationSettings(
+        vpnPolicy: VpnPolicy,
+        applicationSettingsList: List<ApplicationSettings>
+    ) {
+        applicationSettingsStore.edit().apply {
+            applicationSettingsList.forEach {
+                putString(it.packageName, vpnPolicy.name)
+            }
+        }.apply()
+
+        vpnPolicySettingsStore.edit()
+            .putString(SHARED_PREFERENCES_VPN_POLICY_KEY, vpnPolicy.name)
             .apply()
 
         refresh()
     }
 
     companion object {
-        private const val SHARED_PREFERENCES_KEY = "ApplicationSettings"
+        private const val SHARED_PREFERENCES_VPN_POLICY_KEY = "VpnPolicy"
+        private const val SHARED_PREFERENCES_APPLICATION_SETTINGS_KEY = "ApplicationSettings"
     }
 }

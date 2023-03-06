@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -52,34 +53,43 @@ import java.util.*
 
 @Composable
 internal fun PolicyTab(
+    selectedApplicationsSettings: List<ApplicationSettings>,
+    selectedVpnPolicy: State<VpnPolicy>,
     applicationsSettings: State<List<ApplicationSettings>>,
-    onApplicationSettingTapped: (VpnPolicy, ApplicationSettings) -> Unit,
+    onVpnPolicyTapped: (VpnPolicy) -> Unit,
+    onApplicationSettingsTapped: (ApplicationSettings) -> Unit,
+    onSaveApplicationSettings: () -> Unit,
     onResetApplicationSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val items = listOf(
+        VpnPolicy.DEFAULT.capitalizedName(),
         VpnPolicy.ALLOW.capitalizedName(),
-        VpnPolicy.DISALLOW.capitalizedName()
+        VpnPolicy.DISALLOW.capitalizedName(),
     )
     val isDropDownMenuExpanded = remember { mutableStateOf(false) }
-    val selectedItem = remember { mutableStateOf(items.first()) }
 
     Column(modifier) {
 
-        AllowOrDisallowApplicationsDropDownMenu(
-            modifier = Modifier.fillMaxWidth(),
-            selectedItem = selectedItem.value,
-            items = items,
-            isExpanded = isDropDownMenuExpanded.value,
-            onDismissRequest = {
-                isDropDownMenuExpanded.value = false
-            },
-            onItemSelected = {
-                selectedItem.value = it
-            },
-            onDropDownMenuClicked = {
-                isDropDownMenuExpanded.value = !isDropDownMenuExpanded.value
-            })
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp)
+        ) {
+            AllowOrDisallowApplicationsDropDownMenu(
+                selectedItem = selectedVpnPolicy.value.capitalizedName(),
+                items = items,
+                isExpanded = isDropDownMenuExpanded.value,
+                onDismissRequest = {
+                    isDropDownMenuExpanded.value = false
+                },
+                onItemSelected = {
+                    onVpnPolicyTapped(VpnPolicy.valueOf(it.uppercase()))
+                },
+                onDropDownMenuClicked = {
+                    isDropDownMenuExpanded.value = !isDropDownMenuExpanded.value
+                })
+        }
 
         Box(
             modifier = Modifier
@@ -88,11 +98,11 @@ internal fun PolicyTab(
                 .weight(1f)
         ) {
             ApplicationSettings(
-                selectedPolicy = VpnPolicy.valueOf(selectedItem.value.uppercase()),
+                selectedVpnPolicy = selectedVpnPolicy,
+                selectedApplicationsSettings = selectedApplicationsSettings,
                 applicationsSettings = applicationsSettings,
-                onApplicationSettingTapped = onApplicationSettingTapped,
-                modifier = Modifier
-                    .matchParentSize()
+                onApplicationSettingsTapped = onApplicationSettingsTapped,
+                modifier = Modifier.matchParentSize()
             )
         }
 
@@ -101,7 +111,9 @@ internal fun PolicyTab(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             OutlinedButton(
-                onClick = onResetApplicationSettings,
+                onClick = {
+                    onSaveApplicationSettings()
+                },
                 modifier = Modifier.weight(1f)
             ) {
                 Image(
@@ -119,10 +131,10 @@ internal fun PolicyTab(
             ) {
                 Image(
                     imageVector = Icons.Filled.Delete,
-                    contentDescription = "Clear user selection"
+                    contentDescription = "Reset user selection"
                 )
                 Text(
-                    text = "Clear"
+                    text = "Reset"
                 )
             }
         }
@@ -134,7 +146,6 @@ private fun VpnPolicy.capitalizedName() =
 
 @Composable
 private fun AllowOrDisallowApplicationsDropDownMenu(
-    modifier: Modifier,
     selectedItem: String,
     items: List<String>,
     isExpanded: Boolean = false,
@@ -142,23 +153,32 @@ private fun AllowOrDisallowApplicationsDropDownMenu(
     onItemSelected: (String) -> Unit,
     onDropDownMenuClicked: () -> Unit
 ) {
-    OutlinedButton(
-        modifier = modifier,
-        onClick = onDropDownMenuClicked,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(
-                imageVector = Icons.Filled.ArrowDropDown,
-                contentDescription = "Drop down item"
-            )
-            Text(selectedItem)
+    Box(contentAlignment = Alignment.CenterStart) {
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onDropDownMenuClicked,
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Image(
+                    imageVector = Icons.Filled.ArrowDropDown,
+                    contentDescription = "Drop down item"
+                )
+                Text(
+                    text = selectedItem,
+                    textAlign = TextAlign.Start
+                )
+            }
         }
     }
 
     DropdownMenu(
-        modifier = modifier,
         expanded = isExpanded,
         onDismissRequest = onDismissRequest,
+        modifier = Modifier
+            .padding(horizontal = 10.dp),
     ) {
         items.forEach {
             DropdownMenuItem(
@@ -166,9 +186,14 @@ private fun AllowOrDisallowApplicationsDropDownMenu(
                     onItemSelected(it)
                     onDismissRequest()
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp),
             ) {
-                Text(text = it)
+                Text(
+                    text = it,
+                    textAlign = TextAlign.Start
+                )
             }
         }
     }
@@ -176,9 +201,10 @@ private fun AllowOrDisallowApplicationsDropDownMenu(
 
 @Composable
 private fun ApplicationSettings(
-    selectedPolicy: VpnPolicy,
+    selectedVpnPolicy: State<VpnPolicy>,
+    selectedApplicationsSettings: List<ApplicationSettings>,
     applicationsSettings: State<List<ApplicationSettings>>,
-    onApplicationSettingTapped: (VpnPolicy, ApplicationSettings) -> Unit,
+    onApplicationSettingsTapped: (ApplicationSettings) -> Unit,
     modifier: Modifier = Modifier
 ) {
     LazyColumn(modifier) {
@@ -218,14 +244,17 @@ private fun ApplicationSettings(
                         )
 
                         val triState = when {
-                            selectedPolicy == VpnPolicy.ALLOW && applicationSetting.policy == VpnPolicy.ALLOW -> ToggleableState.On
-                            selectedPolicy == VpnPolicy.DISALLOW && applicationSetting.policy == VpnPolicy.DISALLOW -> ToggleableState.On
+                            selectedVpnPolicy.value == VpnPolicy.DEFAULT -> ToggleableState.Indeterminate
+                            selectedApplicationsSettings.contains(applicationSetting) -> ToggleableState.On
                             else -> ToggleableState.Off
                         }
 
-                        TriStateCheckbox(state = triState, onClick = {
-                            onApplicationSettingTapped(selectedPolicy, applicationSetting)
-                        })
+                        TriStateCheckbox(
+                            enabled = selectedVpnPolicy.value != VpnPolicy.DEFAULT,
+                            state = triState,
+                            onClick = {
+                                onApplicationSettingsTapped(applicationSetting)
+                            })
                     }
                 }
             }
@@ -238,20 +267,32 @@ private fun ApplicationSettings(
 fun PolicyTabPreview() {
     val context = LocalContext.current
 
-    AndroidLocalVpnTheme {
-        PolicyTab(applicationsSettings = MutableStateFlow(
-            listOf(
-                ApplicationSettings(
-                    appName = "test test test",
-                    packageName = "com.test",
-                    policy = VpnPolicy.DEFAULT,
-                    appIcon = AppCompatResources.getDrawable(
-                        context, R.drawable.ic_launcher_background
-                    )!!
-                )
+    val selectedVpnPolicy = MutableStateFlow(
+        VpnPolicy.ALLOW
+    ).collectAsState()
+
+    val applicationSettings = MutableStateFlow(
+        listOf(
+            ApplicationSettings(
+                appName = "test test test",
+                packageName = "com.test",
+                policy = VpnPolicy.DEFAULT,
+                appIcon = AppCompatResources.getDrawable(
+                    context, R.drawable.ic_launcher_background
+                )!!
             )
-        ).collectAsState(),
-            onApplicationSettingTapped = { _, _ -> },
-            onResetApplicationSettings = {})
+        )
+    ).collectAsState()
+
+    AndroidLocalVpnTheme {
+        PolicyTab(
+            selectedApplicationsSettings = emptyList(),
+            selectedVpnPolicy = selectedVpnPolicy,
+            applicationsSettings = applicationSettings,
+            onApplicationSettingsTapped = {},
+            onSaveApplicationSettings = {},
+            onResetApplicationSettings = {},
+            onVpnPolicyTapped = {},
+        )
     }
 }

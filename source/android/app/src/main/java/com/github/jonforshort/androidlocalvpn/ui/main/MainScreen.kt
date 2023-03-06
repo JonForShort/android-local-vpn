@@ -94,11 +94,44 @@ private fun policyTab(
     tabName = "Policy",
     tabIcon = Icons.Filled.Build,
     tab = {
+
+        val selectedVpnPolicy = remember {
+            mutableStateOf(mainViewModel.vpnPolicy.value)
+        }
+
+        val selectedApplicationsSettings = remember {
+            val lastSavedVpnPolicy = mainViewModel.vpnPolicy.value
+            mutableStateListOf(
+                *mainViewModel.applicationSettings.value
+                    .filter {
+                        it.policy == lastSavedVpnPolicy && lastSavedVpnPolicy != VpnPolicy.DEFAULT
+                    }
+                    .toTypedArray()
+            )
+        }
+
         PolicyTab(
-            mainViewModel.applicationSettings.collectAsState(),
-            onResetApplicationSettings = { mainViewModel.clear() },
-            onApplicationSettingTapped = { newPolicy, applicationSettings ->
-                mainViewModel.adjustApplicationSettings(newPolicy, applicationSettings)
+            selectedVpnPolicy = selectedVpnPolicy,
+            selectedApplicationsSettings = selectedApplicationsSettings,
+            applicationsSettings = mainViewModel.applicationSettings.collectAsState(),
+            onVpnPolicyTapped = { vpnPolicy ->
+                selectedVpnPolicy.value = vpnPolicy
+            },
+            onSaveApplicationSettings = {
+                mainViewModel.adjustApplicationSettings(
+                    selectedVpnPolicy.value,
+                    selectedApplicationsSettings
+                )
+            },
+            onResetApplicationSettings = {
+                mainViewModel.reset()
+            },
+            onApplicationSettingsTapped = { applicationSettings ->
+                if (selectedApplicationsSettings.contains(applicationSettings)) {
+                    selectedApplicationsSettings.remove(applicationSettings)
+                } else {
+                    selectedApplicationsSettings.add(applicationSettings)
+                }
             },
             modifier = Modifier
                 .padding(20.dp)
