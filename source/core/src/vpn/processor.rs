@@ -23,7 +23,7 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::buffers::{IncomingDataEvent, IncomingDirection, OutgoingDirection};
+use super::buffers::{IncomingDataEvent, IncomingDirection, OutgoingDirection, WriteError};
 use super::session::Session;
 use super::session_info::SessionInfo;
 use super::utils::log_packet;
@@ -242,13 +242,15 @@ impl<'a> Processor<'a> {
             log::trace!("read from server, session={:?}", session_info);
 
             let is_session_closed = match session.mio_socket.read() {
-                Ok((bytes, is_closed)) => {
-                    if !bytes.is_empty() {
-                        let event = IncomingDataEvent {
-                            direction: IncomingDirection::FromServer,
-                            buffer: &bytes[..],
-                        };
-                        session.buffers.push_data(event);
+                Ok((read_seqs, is_closed)) => {
+                    for bytes in read_seqs {
+                        if !bytes.is_empty() {
+                            let event = IncomingDataEvent {
+                                direction: IncomingDirection::FromServer,
+                                buffer: &bytes[..],
+                            };
+                            session.buffers.push_data(event);
+                        }
                     }
                     is_closed
                 }
@@ -275,25 +277,14 @@ impl<'a> Processor<'a> {
         if let Some(session) = self.sessions.get_mut(session_info) {
             log::trace!("write to server, session={:?}", session_info);
 
-            let buffer = session
+            session
                 .buffers
-                .peek_data(OutgoingDirection::ToServer)
-                .buffer
-                .to_vec();
-            match session.mio_socket.write(&buffer[..]) {
-                Ok(consumed) => {
+                .write_data(OutgoingDirection::ToServer, |b| {
                     session
-                        .buffers
-                        .consume_data(OutgoingDirection::ToServer, consumed);
-                }
-                Err(error) => {
-                    if error.kind() == ErrorKind::WouldBlock {
-                        // do nothing.
-                    } else {
-                        log::error!("failed to to server, error={:?}", error);
-                    }
-                }
-            }
+                        .mio_socket
+                        .write(b)
+                        .map_err(|e| WriteError::Stderr(e))
+                });
 
             log::trace!("finished write to server, session={:?}", session_info);
         }
@@ -334,17 +325,11 @@ impl<'a> Processor<'a> {
 
             let mut socket = session.smoltcp_socket.get(&mut session.interface);
             if socket.can_send() {
-                let event = session.buffers.peek_data(OutgoingDirection::ToClient);
-                match socket.send(event.buffer) {
-                    Ok(consumed) => {
-                        session
-                            .buffers
-                            .consume_data(OutgoingDirection::ToClient, consumed);
-                    }
-                    Err(error) => {
-                        log::error!("failed to write to client, error={:?}", error);
-                    }
-                }
+                session
+                    .buffers
+                    .write_data(OutgoingDirection::ToClient, |b| {
+                        socket.send(b).map_err(|e| WriteError::SmoltcpErr(e))
+                    });
             }
 
             log::trace!("finished write to smoltcp, session={:?}", session_info);

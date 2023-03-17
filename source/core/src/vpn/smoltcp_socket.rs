@@ -90,11 +90,13 @@ impl Socket {
     fn create_udp_socket<'a>(endpoint: IpEndpoint) -> Option<UdpSocket<'a>> {
         let mut socket = UdpSocket::new(
             UdpSocketBuffer::new(
-                vec![UdpPacketMetadata::EMPTY, UdpPacketMetadata::EMPTY],
+                // vec![UdpPacketMetadata::EMPTY, UdpPacketMetadata::EMPTY],
+                vec![UdpPacketMetadata::EMPTY; 1024 * 1024],
                 vec![0; 1024 * 1024],
             ),
             UdpSocketBuffer::new(
-                vec![UdpPacketMetadata::EMPTY, UdpPacketMetadata::EMPTY],
+                // vec![UdpPacketMetadata::EMPTY, UdpPacketMetadata::EMPTY],
+                vec![UdpPacketMetadata::EMPTY; 1024 * 1024],
                 vec![0; 1024 * 1024],
             ),
         );

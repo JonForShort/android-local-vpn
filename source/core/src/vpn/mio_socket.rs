@@ -113,7 +113,7 @@ impl Socket {
         }
     }
 
-    pub(crate) fn read(&mut self) -> Result<(Vec<u8>, bool)> {
+    pub(crate) fn read(&mut self) -> Result<(Vec<Vec<u8>>, bool)> {
         match &mut self.connection {
             Connection::Tcp(connection) => Self::read_all(connection),
             Connection::Udp(connection) => Self::read_all(connection),
@@ -169,12 +169,12 @@ impl Socket {
         }
     }
 
-    fn read_all<R>(reader: &mut R) -> Result<(Vec<u8>, bool)>
+    fn read_all<R>(reader: &mut R) -> Result<(Vec<Vec<u8>>, bool)>
     where
         R: Read,
     {
-        let mut bytes: Vec<u8> = Vec::new();
-        let mut buffer = [0; 1024];
+        let mut bytes: Vec<Vec<u8>> = Vec::new();
+        let mut buffer = [0; 1 << 16]; // maximum UDP packet size
         let mut is_closed = false;
         loop {
             match reader.read(&mut buffer[..]) {
@@ -183,7 +183,9 @@ impl Socket {
                         is_closed = true;
                         break;
                     }
-                    bytes.extend_from_slice(&buffer[..count]);
+                    // bytes.extend_from_slice(&buffer[..count]);
+                    let data = buffer[..count].to_vec();
+                    bytes.push(data)
                 }
                 Err(error_code) => {
                     if error_code.kind() == ErrorKind::WouldBlock {
