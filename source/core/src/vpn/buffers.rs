@@ -27,8 +27,8 @@ use std::collections::VecDeque;
 use std::io::ErrorKind;
 
 pub(crate) enum Buffers {
-    TCP(TCPBuffers),
-    UDP(UDPBuffers),
+    Tcp(TcpBuffers),
+    Udp(UdpBuffers),
 }
 
 pub(crate) enum WriteError {
@@ -39,8 +39,8 @@ pub(crate) enum WriteError {
 impl Buffers {
     pub(crate) fn push_data(&mut self, event: IncomingDataEvent<'_>) {
         match self {
-            Buffers::TCP(tcp_buf) => tcp_buf.push_data(event),
-            Buffers::UDP(udp_buf) => udp_buf.push_data(event),
+            Buffers::Tcp(tcp_buf) => tcp_buf.push_data(event),
+            Buffers::Udp(udp_buf) => udp_buf.push_data(event),
         }
     }
 
@@ -49,7 +49,7 @@ impl Buffers {
         F: FnMut(&[u8]) -> Result<usize, WriteError>,
     {
         match self {
-            Buffers::TCP(tcp_buf) => {
+            Buffers::Tcp(tcp_buf) => {
                 let buffer = tcp_buf.peek_data(&direction).to_vec();
                 match write_fn(&buffer[..]) {
                     Ok(consumed) => {
@@ -76,7 +76,7 @@ impl Buffers {
                     },
                 }
             }
-            Buffers::UDP(udp_buf) => {
+            Buffers::Udp(udp_buf) => {
                 let all_datagrams = udp_buf.peek_data(&direction);
                 let mut consumed: usize = 0;
                 // write udp packets one by one
@@ -115,14 +115,14 @@ impl Buffers {
     }
 }
 
-pub(crate) struct TCPBuffers {
+pub(crate) struct TcpBuffers {
     client: VecDeque<u8>,
     server: VecDeque<u8>,
 }
 
-impl TCPBuffers {
-    pub(crate) fn new() -> TCPBuffers {
-        TCPBuffers {
+impl TcpBuffers {
+    pub(crate) fn new() -> TcpBuffers {
+        TcpBuffers {
             client: Default::default(),
             server: Default::default(),
         }
@@ -158,14 +158,14 @@ impl TCPBuffers {
     }
 }
 
-pub(crate) struct UDPBuffers {
+pub(crate) struct UdpBuffers {
     client: VecDeque<Vec<u8>>,
     server: VecDeque<Vec<u8>>,
 }
 
-impl UDPBuffers {
-    pub(crate) fn new() -> UDPBuffers {
-        UDPBuffers {
+impl UdpBuffers {
+    pub(crate) fn new() -> UdpBuffers {
+        UdpBuffers {
             client: Default::default(),
             server: Default::default(),
         }
@@ -215,4 +215,3 @@ pub(crate) struct DataEvent<'a, T> {
 }
 
 pub(crate) type IncomingDataEvent<'a> = DataEvent<'a, IncomingDirection>;
-pub(crate) type OutgoingDataEvent<'a> = DataEvent<'a, OutgoingDirection>;

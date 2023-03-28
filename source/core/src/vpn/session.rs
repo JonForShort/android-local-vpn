@@ -23,7 +23,7 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::buffers::{Buffers, TCPBuffers, UDPBuffers};
+use super::buffers::{Buffers, TcpBuffers, UdpBuffers};
 use super::mio_socket::{InternetProtocol as MioInternetProtocol, Socket as MioSocket, TransportProtocol as MioTransportProtocol};
 use super::session_info::{InternetProtocol, SessionInfo, TransportProtocol};
 use super::smoltcp_socket::{Socket as SmoltcpSocket, TransportProtocol as SmoltcpProtocol};
@@ -111,8 +111,8 @@ impl<'a> Session<'a> {
 
     fn create_buffer(session_info: &SessionInfo) -> Buffers {
         match session_info.transport_protocol {
-            TransportProtocol::Tcp => Buffers::TCP(TCPBuffers::new()),
-            TransportProtocol::Udp => Buffers::UDP(UDPBuffers::new()),
+            TransportProtocol::Tcp => Buffers::Tcp(TcpBuffers::new()),
+            TransportProtocol::Udp => Buffers::Udp(UdpBuffers::new()),
         }
     }
 }

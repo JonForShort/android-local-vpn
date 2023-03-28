@@ -280,10 +280,7 @@ impl<'a> Processor<'a> {
             session
                 .buffers
                 .write_data(OutgoingDirection::ToServer, |b| {
-                    session
-                        .mio_socket
-                        .write(b)
-                        .map_err(|e| WriteError::Stderr(e))
+                    session.mio_socket.write(b).map_err(WriteError::Stderr)
                 });
 
             log::trace!("finished write to server, session={:?}", session_info);
@@ -328,7 +325,7 @@ impl<'a> Processor<'a> {
                 session
                     .buffers
                     .write_data(OutgoingDirection::ToClient, |b| {
-                        socket.send(b).map_err(|e| WriteError::SmoltcpErr(e))
+                        socket.send(b).map_err(WriteError::SmoltcpErr)
                     });
             }
 
