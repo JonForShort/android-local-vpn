@@ -93,6 +93,7 @@ internal class LocalVpnService : VpnService() {
             INTENT_ACTION_START_VPN -> {
                 startVpn(configuration = intent.getParcelableExtra(INTENT_EXTRA_CONFIGURATION))
             }
+
             INTENT_ACTION_STOP_VPN -> {
                 stopVpn()
             }
@@ -101,14 +102,18 @@ internal class LocalVpnService : VpnService() {
     }
 
     private fun stopVpn() {
+        onStopVpn()
+        stopForeground(true)
+        stopSelf()
+        closeVpnInterface()
+    }
+
+    private fun closeVpnInterface() {
         try {
             vpnInterface.close()
         } catch (e: IOException) {
             e(e, "failed to close parcel file descriptor")
         }
-        onStopVpn()
-        stopForeground(true)
-        stopSelf()
     }
 
     private fun startVpn(configuration: LocalVpnConfiguration?) {
