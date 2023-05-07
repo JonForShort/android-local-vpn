@@ -30,7 +30,10 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import android.os.Build.VERSION
+import android.os.Build.VERSION_CODES
 import android.os.ParcelFileDescriptor
+import android.os.Parcelable
 import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnService.Companion.INTENT_ACTION_START_VPN
 import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnService.Companion.INTENT_ACTION_STOP_VPN
 import com.github.jonforshort.androidlocalvpn.vpn.LocalVpnService.Companion.INTENT_EXTRA_CONFIGURATION
@@ -91,7 +94,7 @@ internal class LocalVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             INTENT_ACTION_START_VPN -> {
-                startVpn(configuration = intent.getParcelableExtra(INTENT_EXTRA_CONFIGURATION))
+                startVpn(configuration = intent.getParcelableExtraCompat(INTENT_EXTRA_CONFIGURATION))
             }
 
             INTENT_ACTION_STOP_VPN -> {
@@ -103,7 +106,7 @@ internal class LocalVpnService : VpnService() {
 
     private fun stopVpn() {
         onStopVpn()
-        stopForeground(true)
+        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         closeVpnInterface()
     }
@@ -154,4 +157,9 @@ internal class LocalVpnService : VpnService() {
     private external fun onStartVpn(fileDescriptor: Int)
 
     private external fun onStopVpn()
+}
+
+private inline fun <reified T : Parcelable> Intent.getParcelableExtraCompat(key: String) = when {
+    VERSION.SDK_INT >= VERSION_CODES.TIRAMISU -> getParcelableExtra(key, T::class.java)
+    else -> @Suppress("DEPRECATION") getParcelableExtra(key) as? T
 }

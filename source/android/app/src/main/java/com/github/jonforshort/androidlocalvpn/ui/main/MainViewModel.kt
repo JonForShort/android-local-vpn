@@ -29,6 +29,9 @@ package com.github.jonforshort.androidlocalvpn.ui.main
 import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.pm.PackageManager.ApplicationInfoFlags
+import android.os.Build.VERSION
+import android.os.Build.VERSION_CODES
 import androidx.lifecycle.AndroidViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,8 +79,7 @@ internal class MainViewModel(application: Application) : AndroidViewModel(applic
             .applicationContext
             .packageManager
 
-        val installedApplications = packageManager
-            .getInstalledApplications(PackageManager.GET_META_DATA)
+        val installedApplications = packageManager.getInstalledApplicationsCompat()
 
         installedApplications.forEach { installedApplication ->
             add(
@@ -117,4 +119,9 @@ internal class MainViewModel(application: Application) : AndroidViewModel(applic
         private const val SHARED_PREFERENCES_VPN_POLICY_KEY = "VpnPolicy"
         private const val SHARED_PREFERENCES_APPLICATION_SETTINGS_KEY = "ApplicationSettings"
     }
+}
+
+private fun PackageManager.getInstalledApplicationsCompat() = when {
+    VERSION.SDK_INT >= VERSION_CODES.TIRAMISU -> getInstalledApplications(ApplicationInfoFlags.of(0L))
+    else -> @Suppress("DEPRECATION") getInstalledApplications(PackageManager.GET_META_DATA)
 }
