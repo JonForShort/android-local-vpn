@@ -52,10 +52,10 @@ jobs:
     - name: Set up Android NDK
       run: $ANDROID_SDK_ROOT/tools/bin/sdkmanager --install "ndk;25.2.9519653"
 
-    - name: Set up JDK 11
+    - name: Set up JDK
       uses: actions/setup-java@v3
       with:
-        java-version: '11'
+        java-version: '17'
         distribution: 'temurin'
         cache: gradle
 
