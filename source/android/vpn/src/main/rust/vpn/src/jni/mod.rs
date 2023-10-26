@@ -64,7 +64,7 @@ impl Jni {
 
     pub fn new_context(&self) -> Option<JniContext> {
         match self.java_vm.attach_current_thread_permanently() {
-            Ok(jni_env) => match Jni::get_protect_method_id(jni_env) {
+            Ok(jni_env) => match Jni::get_protect_method_id(unsafe { jni_env.unsafe_clone() }) {
                 Some(protect_method_id) => {
                     let object = self.object.as_obj();
                     return Some(JniContext {
@@ -84,7 +84,7 @@ impl Jni {
         None
     }
 
-    fn get_protect_method_id(jni_env: JNIEnv) -> Option<JMethodID> {
+    fn get_protect_method_id(mut jni_env: JNIEnv) -> Option<JMethodID> {
         match jni_env.find_class("android/net/VpnService") {
             Ok(class) => match jni_env.get_method_id(class, "protect", "(I)Z") {
                 Ok(method_id) => {

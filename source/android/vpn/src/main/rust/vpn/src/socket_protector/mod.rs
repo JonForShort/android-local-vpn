@@ -80,9 +80,9 @@ impl SocketProtector {
         let receiver_channel = self.channel.1.clone();
         self.thread_join_handle = Some(std::thread::spawn(move || {
             log::trace!("socket protecting thread is started");
-            if let Some(jni_context) = jni!().new_context() {
+            if let Some(mut jni_context) = jni!().new_context() {
                 while is_thread_running.load(Ordering::SeqCst) {
-                    SocketProtector::handle_protect_socket_request(&receiver_channel, &jni_context);
+                    SocketProtector::handle_protect_socket_request(&receiver_channel, &mut jni_context);
                 }
             }
             log::trace!("socket protecting thread is stopping");
@@ -99,7 +99,7 @@ impl SocketProtector {
         self.thread_join_handle.take().unwrap().join().unwrap();
     }
 
-    fn handle_protect_socket_request(receiver: &ReceiverChannel, jni_context: &JniContext) {
+    fn handle_protect_socket_request(receiver: &ReceiverChannel, jni_context: &mut JniContext) {
         let (socket, reply_sender) = receiver.recv().unwrap();
         let is_socket_protected = if socket <= 0 {
             log::trace!("found invalid socket, socket={:?}", socket);

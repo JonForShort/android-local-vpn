@@ -1,3 +1,8 @@
+.vscode/
+.VSCodeCounter/
+Cargo.lock
+target/
+
 # Built application files
 *.apk
 *.aar
