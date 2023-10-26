@@ -24,11 +24,15 @@
 // For more information, please refer to <https://unlicense.org>
 
 use crate::tun_callbacks::on_socket_created;
-use mio::net::{TcpStream, UdpSocket};
-use mio::{Interest, Poll, Token};
-use std::io::{ErrorKind, Result};
-use std::net::{Shutdown, SocketAddr};
-use std::os::unix::io::{AsRawFd, FromRawFd};
+use mio::{
+    net::{TcpStream, UdpSocket},
+    Interest, Poll, Token,
+};
+use std::{
+    io::{ErrorKind, Result},
+    net::{Shutdown, SocketAddr},
+    os::unix::io::{AsRawFd, FromRawFd},
+};
 
 pub(crate) enum TransportProtocol {
     Tcp,

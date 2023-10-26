@@ -23,17 +23,11 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use std::collections::VecDeque;
-use std::io::ErrorKind;
+use std::{collections::VecDeque, io::ErrorKind};
 
 pub(crate) enum Buffers {
     Tcp(TcpBuffers),
     Udp(UdpBuffers),
-}
-
-pub(crate) enum WriteError {
-    Stderr(std::io::Error),
-    SmoltcpErr(smoltcp::Error),
 }
 
 impl Buffers {
@@ -46,7 +40,7 @@ impl Buffers {
 
     pub(crate) fn write_data<F>(&mut self, direction: OutgoingDirection, mut write_fn: F)
     where
-        F: FnMut(&[u8]) -> Result<usize, WriteError>,
+        F: FnMut(&[u8]) -> crate::Result<usize>,
     {
         match self {
             Buffers::Tcp(tcp_buf) => {
@@ -56,7 +50,7 @@ impl Buffers {
                         tcp_buf.consume_data(&direction, consumed);
                     }
                     Err(error) => match error {
-                        WriteError::Stderr(err) => {
+                        crate::Error::Io(err) => {
                             if err.kind() == ErrorKind::WouldBlock {
                             } else {
                                 log::error!(
@@ -66,11 +60,18 @@ impl Buffers {
                                 );
                             }
                         }
-                        WriteError::SmoltcpErr(err) => {
+                        crate::Error::TcpSend(err) => {
                             log::error!(
                                 "failed to write tcp, direction: {:?}, error={:?}",
                                 direction,
                                 err
+                            );
+                        }
+                        _ => {
+                            log::error!(
+                                "failed to write tcp, direction: {:?}, error={:?}",
+                                direction,
+                                error
                             );
                         }
                     },
@@ -83,7 +84,7 @@ impl Buffers {
                 for datagram in all_datagrams {
                     if let Err(error) = write_fn(&datagram[..]) {
                         match error {
-                            WriteError::Stderr(err) => {
+                            crate::Error::Io(err) => {
                                 if err.kind() == ErrorKind::WouldBlock {
                                     break;
                                 } else {
@@ -94,8 +95,9 @@ impl Buffers {
                                     );
                                 }
                             }
-                            WriteError::SmoltcpErr(err) => {
-                                if err == smoltcp::Error::Exhausted || err == smoltcp::Error::Truncated {
+                            crate::Error::UdpSend(err) => {
+                                use ::smoltcp::socket::udp::SendError;
+                                if err == SendError::BufferFull || err == SendError::Unaddressable {
                                     break;
                                 } else {
                                     log::error!(
@@ -104,6 +106,13 @@ impl Buffers {
                                         err
                                     );
                                 }
+                            }
+                            _ => {
+                                log::error!(
+                                    "failed to write udp, direction: {:?}, error={:?}",
+                                    direction,
+                                    error
+                                );
                             }
                         }
                     }

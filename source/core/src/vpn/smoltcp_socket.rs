@@ -23,10 +23,11 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::vpn_device::VpnDevice;
-use smoltcp::iface::{Interface, SocketHandle};
-use smoltcp::socket::{TcpSocket, TcpSocketBuffer, UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
-use smoltcp::wire::IpEndpoint;
+use smoltcp::{
+    iface::{SocketHandle, SocketSet},
+    socket::{tcp, udp},
+    wire::IpEndpoint,
+};
 use std::net::SocketAddr;
 
 pub(crate) enum TransportProtocol {
@@ -41,11 +42,11 @@ pub(crate) struct Socket {
 }
 
 impl Socket {
-    pub(crate) fn new(
+    pub(crate) fn new<'a>(
         transport_protocol: TransportProtocol,
         local_address: SocketAddr,
         remote_address: SocketAddr,
-        interface: &mut Interface<VpnDevice>,
+        sockets: &mut SocketSet<'a>,
     ) -> Option<Socket> {
         let local_endpoint = IpEndpoint::from(local_address);
 
@@ -54,11 +55,11 @@ impl Socket {
         let socket_handle = match transport_protocol {
             TransportProtocol::Tcp => {
                 let socket = Self::create_tcp_socket(remote_endpoint).unwrap();
-                interface.add_socket(socket)
+                sockets.add(socket)
             }
             TransportProtocol::Udp => {
                 let socket = Self::create_udp_socket(remote_endpoint).unwrap();
-                interface.add_socket(socket)
+                sockets.add(socket)
             }
         };
 
@@ -71,10 +72,10 @@ impl Socket {
         Some(socket)
     }
 
-    fn create_tcp_socket<'a>(endpoint: IpEndpoint) -> Option<TcpSocket<'a>> {
-        let mut socket = TcpSocket::new(
-            TcpSocketBuffer::new(vec![0; 1024 * 1024]),
-            TcpSocketBuffer::new(vec![0; 1024 * 1024]),
+    fn create_tcp_socket<'a>(endpoint: IpEndpoint) -> Option<tcp::Socket<'a>> {
+        let mut socket = tcp::Socket::new(
+            tcp::SocketBuffer::new(vec![0; 1024 * 1024]),
+            tcp::SocketBuffer::new(vec![0; 1024 * 1024]),
         );
 
         if socket.listen(endpoint).is_err() {
@@ -87,16 +88,14 @@ impl Socket {
         Some(socket)
     }
 
-    fn create_udp_socket<'a>(endpoint: IpEndpoint) -> Option<UdpSocket<'a>> {
-        let mut socket = UdpSocket::new(
-            UdpSocketBuffer::new(
-                // vec![UdpPacketMetadata::EMPTY, UdpPacketMetadata::EMPTY],
-                vec![UdpPacketMetadata::EMPTY; 1024 * 1024],
+    fn create_udp_socket<'a>(endpoint: IpEndpoint) -> Option<udp::Socket<'a>> {
+        let mut socket = udp::Socket::new(
+            udp::PacketBuffer::new(
+                vec![udp::PacketMetadata::EMPTY; 1024 * 1024],
                 vec![0; 1024 * 1024],
             ),
-            UdpSocketBuffer::new(
-                // vec![UdpPacketMetadata::EMPTY, UdpPacketMetadata::EMPTY],
-                vec![UdpPacketMetadata::EMPTY; 1024 * 1024],
+            udp::PacketBuffer::new(
+                vec![udp::PacketMetadata::EMPTY; 1024 * 1024],
                 vec![0; 1024 * 1024],
             ),
         );
@@ -109,14 +108,14 @@ impl Socket {
         Some(socket)
     }
 
-    pub(crate) fn get<'a, 'b>(&self, interface: &'b mut Interface<'a, VpnDevice>) -> SocketInstance<'a, 'b> {
+    pub(crate) fn get<'a, 'b>(&self, sockets: &'b mut SocketSet<'a>) -> SocketInstance<'a, 'b> {
         let socket = match self.transport_protocol {
             TransportProtocol::Tcp => {
-                let socket = interface.get_socket::<TcpSocket>(self.socket_handle);
+                let socket = sockets.get_mut::<tcp::Socket>(self.socket_handle);
                 SocketType::Tcp(socket)
             }
             TransportProtocol::Udp => {
-                let socket = interface.get_socket::<UdpSocket>(self.socket_handle);
+                let socket = sockets.get_mut::<udp::Socket>(self.socket_handle);
                 SocketType::Udp(socket, self.local_endpoint)
             }
         };
@@ -130,8 +129,8 @@ pub(crate) struct SocketInstance<'a, 'b> {
 }
 
 enum SocketType<'a, 'b> {
-    Tcp(&'b mut TcpSocket<'a>),
-    Udp(&'b mut UdpSocket<'a>, IpEndpoint),
+    Tcp(&'b mut tcp::Socket<'a>),
+    Udp(&'b mut udp::Socket<'a>, IpEndpoint),
 }
 
 impl<'a, 'b> SocketInstance<'a, 'b> {
@@ -142,12 +141,12 @@ impl<'a, 'b> SocketInstance<'a, 'b> {
         }
     }
 
-    pub(crate) fn send(&mut self, data: &[u8]) -> smoltcp::Result<usize> {
+    pub(crate) fn send(&mut self, data: &[u8]) -> crate::Result<usize> {
         match &mut self.instance {
-            SocketType::Tcp(socket) => socket.send_slice(data),
-            SocketType::Udp(socket, local_endpoint) => socket
+            SocketType::Tcp(socket) => Ok(socket.send_slice(data)?),
+            SocketType::Udp(socket, local_endpoint) => Ok(socket
                 .send_slice(data, *local_endpoint)
-                .and(smoltcp::Result::Ok(data.len())),
+                .and(Ok(data.len()))?),
         }
     }
 
@@ -158,12 +157,10 @@ impl<'a, 'b> SocketInstance<'a, 'b> {
         }
     }
 
-    pub(crate) fn receive(&'b mut self, data: &mut [u8]) -> smoltcp::Result<usize> {
+    pub(crate) fn receive(&'b mut self, data: &mut [u8]) -> crate::Result<usize> {
         match &mut self.instance {
-            SocketType::Tcp(socket) => socket.recv_slice(data),
-            SocketType::Udp(socket, _) => socket
-                .recv_slice(data)
-                .and_then(|result| smoltcp::Result::Ok(result.0)),
+            SocketType::Tcp(socket) => Ok(socket.recv_slice(data)?),
+            SocketType::Udp(socket, _) => Ok(socket.recv_slice(data).and_then(|result| Ok(result.0))?),
         }
     }
 

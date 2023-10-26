@@ -23,20 +23,16 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-#[macro_use]
-extern crate lazy_static;
-
+mod error;
 mod vpn;
+pub use error::{Error, Result};
 
 pub mod tun {
-
-    extern crate log;
-
     use crate::vpn::Vpn;
     use std::process;
     use std::sync::Mutex;
 
-    lazy_static! {
+    lazy_static::lazy_static! {
         static ref VPN: Mutex<Option<Vpn>> = Mutex::new(None);
     }
 
@@ -77,7 +73,7 @@ pub mod tun_callbacks {
 
     use std::sync::RwLock;
 
-    lazy_static! {
+    lazy_static::lazy_static! {
         static ref CALLBACK: RwLock<fn(i32)> = RwLock::new(on_socket_created_stub);
     }
 
