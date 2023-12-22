@@ -27,12 +27,11 @@ use clap::Parser;
 use core::tun;
 use core::tun_callbacks;
 use env_logger::Env;
-use once_cell::sync::OnceCell;
 use smoltcp::phy::{Medium, TunTapInterface};
 use std::ffi::CString;
 use std::os::unix::io::AsRawFd;
 
-static OUT_INTERFACE: OnceCell<CString> = OnceCell::new();
+static OUT_INTERFACE: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
 
 /// Tunnel traffic through sockets.
 #[derive(Parser, Debug)]

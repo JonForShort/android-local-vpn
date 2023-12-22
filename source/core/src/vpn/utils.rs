@@ -25,12 +25,10 @@
 
 use smoltcp::wire::{IpProtocol, Ipv4Packet, TcpPacket, UdpPacket};
 
-extern crate log;
-
 pub fn log_packet(message: &str, bytes: &Vec<u8>) {
     let result = Ipv4Packet::new_checked(&bytes);
     match result {
-        Ok(ip_packet) => match ip_packet.protocol() {
+        Ok(ip_packet) => match ip_packet.next_header() {
             IpProtocol::Tcp => {
                 let tcp_bytes = ip_packet.payload();
                 let tcp_packet = TcpPacket::new_checked(tcp_bytes).unwrap();

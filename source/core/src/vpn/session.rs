@@ -23,40 +23,50 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-use super::buffers::{Buffers, TcpBuffers, UdpBuffers};
-use super::mio_socket::{InternetProtocol as MioInternetProtocol, Socket as MioSocket, TransportProtocol as MioTransportProtocol};
-use super::session_info::{InternetProtocol, SessionInfo, TransportProtocol};
-use super::smoltcp_socket::{Socket as SmoltcpSocket, TransportProtocol as SmoltcpProtocol};
-use super::vpn_device::VpnDevice;
+use crate::vpn::{
+    buffers::{Buffers, TcpBuffers, UdpBuffers},
+    mio_socket::{InternetProtocol as MioInternetProtocol, Socket as MioSocket, TransportProtocol as MioTransportProtocol},
+    session_info::{InternetProtocol, SessionInfo, TransportProtocol},
+    smoltcp_socket::{Socket as SmoltcpSocket, TransportProtocol as SmoltcpProtocol},
+    vpn_device::VpnDevice,
+};
 use mio::{Poll, Token};
-use smoltcp::iface::{Interface, InterfaceBuilder, Routes};
-use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
-use std::collections::btree_map::BTreeMap;
+use smoltcp::{
+    iface::{Config, Interface, SocketSet},
+    time::Instant,
+    wire::{HardwareAddress, IpAddress, IpCidr, Ipv4Address},
+};
 
 pub(crate) struct Session<'a> {
     pub(crate) smoltcp_socket: SmoltcpSocket,
     pub(crate) mio_socket: MioSocket,
     pub(crate) token: Token,
     pub(crate) buffers: Buffers,
-    pub(crate) interface: Interface<'a, VpnDevice>,
+    pub(crate) interface: Interface,
+    pub(crate) sockets: SocketSet<'a>,
+    pub(crate) device: VpnDevice,
 }
 
 impl<'a> Session<'a> {
     pub(crate) fn new(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<Session<'a>> {
-        let mut interface = Self::create_interface();
+        let mut device = VpnDevice::new();
+        let interface = Self::create_interface(&mut device);
+        let mut sockets = SocketSet::new([]);
 
         let session = Session {
-            smoltcp_socket: Self::create_smoltcp_socket(session_info, &mut interface)?,
+            smoltcp_socket: Self::create_smoltcp_socket(session_info, &mut sockets)?,
             mio_socket: Self::create_mio_socket(session_info, poll, token)?,
             token,
             buffers: Self::create_buffer(session_info),
             interface,
+            sockets,
+            device,
         };
 
         Some(session)
     }
 
-    fn create_smoltcp_socket(session_info: &SessionInfo, interface: &mut Interface<VpnDevice>) -> Option<SmoltcpSocket> {
+    fn create_smoltcp_socket<'b>(session_info: &SessionInfo, sockets: &mut SocketSet<'b>) -> Option<SmoltcpSocket> {
         let transport_protocol = match session_info.transport_protocol {
             TransportProtocol::Tcp => SmoltcpProtocol::Tcp,
             TransportProtocol::Udp => SmoltcpProtocol::Udp,
@@ -66,7 +76,7 @@ impl<'a> Session<'a> {
             transport_protocol,
             session_info.source,
             session_info.destination,
-            interface,
+            sockets,
         )
     }
 
@@ -95,16 +105,24 @@ impl<'a> Session<'a> {
         Some(mio_socket)
     }
 
-    fn create_interface() -> Interface<'a, VpnDevice> {
-        let mut routes = Routes::new(BTreeMap::new());
+    fn create_interface<D>(device: &mut D) -> Interface
+    where
+        D: ::smoltcp::phy::Device + ?Sized,
+    {
         let default_gateway_ipv4 = Ipv4Address::new(0, 0, 0, 1);
-        routes.add_default_ipv4_route(default_gateway_ipv4).unwrap();
+        let config = Config::new(HardwareAddress::Ip);
 
-        let interface = InterfaceBuilder::new(VpnDevice::new(), vec![])
-            .any_ip(true)
-            .ip_addrs([IpCidr::new(IpAddress::v4(0, 0, 0, 1), 0)])
-            .routes(routes)
-            .finalize();
+        let mut interface = Interface::new(config, device, Instant::now());
+        interface.set_any_ip(true);
+        interface.update_ip_addrs(|ip_addrs| {
+            ip_addrs
+                .push(IpCidr::new(IpAddress::v4(0, 0, 0, 1), 0))
+                .unwrap();
+        });
+        interface
+            .routes_mut()
+            .add_default_ipv4_route(default_gateway_ipv4)
+            .unwrap();
 
         interface
     }

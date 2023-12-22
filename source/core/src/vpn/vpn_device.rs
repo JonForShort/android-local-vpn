@@ -23,11 +23,10 @@
 //
 // For more information, please refer to <https://unlicense.org>
 
-extern crate smoltcp;
-
-use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
-use smoltcp::time::Instant;
-use smoltcp::Result;
+use smoltcp::{
+    phy::{DeviceCapabilities, Medium},
+    time::Instant,
+};
 use std::collections::VecDeque;
 
 #[derive(Debug)]
@@ -53,9 +52,9 @@ impl VpnDevice {
     }
 }
 
-impl<'a> Device<'a> for VpnDevice {
-    type RxToken = RxToken;
-    type TxToken = TxToken<'a>;
+impl ::smoltcp::phy::Device for VpnDevice {
+    type RxToken<'a> = RxToken where Self: 'a;
+    type TxToken<'a> = TxToken<'a> where Self: 'a;
 
     fn capabilities(&self) -> DeviceCapabilities {
         let mut default = DeviceCapabilities::default();
@@ -64,7 +63,7 @@ impl<'a> Device<'a> for VpnDevice {
         default
     }
 
-    fn receive(&'a mut self) -> Option<(Self::RxToken, Self::TxToken)> {
+    fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         self.rx_queue.pop_front().map(move |buffer| {
             let rx = RxToken { buffer };
             let tx = TxToken {
@@ -74,7 +73,7 @@ impl<'a> Device<'a> for VpnDevice {
         })
     }
 
-    fn transmit(&'a mut self) -> Option<Self::TxToken> {
+    fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
         Some(TxToken {
             queue: &mut self.tx_queue,
         })
@@ -85,10 +84,10 @@ pub(crate) struct RxToken {
     buffer: Vec<u8>,
 }
 
-impl phy::RxToken for RxToken {
-    fn consume<R, F>(mut self, _timestamp: Instant, f: F) -> Result<R>
+impl ::smoltcp::phy::RxToken for RxToken {
+    fn consume<R, F>(mut self, f: F) -> R
     where
-        F: FnOnce(&mut [u8]) -> Result<R>,
+        F: FnOnce(&mut [u8]) -> R,
     {
         f(&mut self.buffer)
     }
@@ -98,10 +97,10 @@ pub(crate) struct TxToken<'a> {
     queue: &'a mut VecDeque<Vec<u8>>,
 }
 
-impl<'a> phy::TxToken for TxToken<'a> {
-    fn consume<R, F>(self, _timestamp: Instant, len: usize, f: F) -> Result<R>
+impl<'a> ::smoltcp::phy::TxToken for TxToken<'a> {
+    fn consume<R, F>(self, len: usize, f: F) -> R
     where
-        F: FnOnce(&mut [u8]) -> Result<R>,
+        F: FnOnce(&mut [u8]) -> R,
     {
         let mut buffer = vec![0; len];
         let result = f(&mut buffer);

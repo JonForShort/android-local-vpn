@@ -24,9 +24,7 @@
 // For more information, please refer to <https://unlicense.org>
 
 use smoltcp::wire::{IpProtocol, Ipv4Packet, Ipv6Packet, TcpPacket, UdpPacket};
-use std::fmt;
-use std::hash::Hash;
-use std::net::SocketAddr;
+use std::{fmt, hash::Hash, net::SocketAddr};
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub(crate) struct SessionInfo {
@@ -60,7 +58,7 @@ impl SessionInfo {
 
     fn new_ipv4(bytes: &Vec<u8>) -> Option<SessionInfo> {
         if let Ok(ip_packet) = Ipv4Packet::new_checked(&bytes) {
-            match ip_packet.protocol() {
+            match ip_packet.next_header() {
                 IpProtocol::Tcp => {
                     let payload = ip_packet.payload();
                     let packet = TcpPacket::new_checked(payload).unwrap();
@@ -88,7 +86,7 @@ impl SessionInfo {
                 _ => {
                     log::warn!(
                         "unsupported transport protocol, protocol=${:?}",
-                        ip_packet.protocol()
+                        ip_packet.next_header()
                     );
                     return None;
                 }
