@@ -6,12 +6,12 @@ plugins {
 android {
     namespace 'com.github.jonforshort.androidlocalvpn'
 
-    compileSdk 33
+    compileSdk 34
 
     defaultConfig {
         applicationId "com.github.jonforshort.androidlocalvpn"
         minSdk 26
-        targetSdk 33
+        targetSdk 34
         versionCode 1
         versionName "1.0"
 
@@ -65,21 +65,21 @@ android {
 dependencies {
     implementation project(':android-local-vpn')
 
-    implementation 'androidx.core:core-ktx:1.10.0'
+    implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.9.0'
-    implementation "androidx.compose.ui:ui:1.4.3"
-    implementation "androidx.compose.material:material:1.4.3"
-    implementation "androidx.compose.ui:ui-tooling-preview:1.4.3"
-    implementation "androidx.compose.runtime:runtime-livedata:1.4.3"
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation "androidx.compose.ui:ui:1.5.4"
+    implementation "androidx.compose.material:material:1.5.4"
+    implementation "androidx.compose.ui:ui-tooling-preview:1.5.4"
+    implementation "androidx.compose.runtime:runtime-livedata:1.5.4"
     implementation "com.google.accompanist:accompanist-pager:0.25.0"
     implementation "com.google.accompanist:accompanist-pager-indicators:0.25.0"
     implementation 'org.jsoup:jsoup:1.15.2'
     implementation 'com.jakewharton.timber:timber:4.7.1'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.1'
-    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1"
-    implementation 'androidx.activity:activity-compose:1.7.1'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2"
+    implementation 'androidx.activity:activity-compose:1.8.2'
     implementation 'dnsjava:dnsjava:3.5.1'
 
-    debugImplementation "androidx.compose.ui:ui-tooling:1.4.3"
+    debugImplementation "androidx.compose.ui:ui-tooling:1.5.4"
 }

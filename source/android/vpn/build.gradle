@@ -29,12 +29,12 @@ ext {
 android {
     namespace 'com.github.jonforshort.androidlocalvpn.vpn'
 
-    compileSdk 33
+    compileSdk 34
     ndkVersion "25.2.9519653"
 
     defaultConfig {
         minSdk 26
-        targetSdk 33
+        targetSdk 34
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
@@ -58,7 +58,7 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.activity:activity-ktx:1.7.1'
+    implementation 'androidx.activity:activity-ktx:1.8.2'
     implementation 'com.jakewharton.timber:timber:4.7.1'
 }
 
