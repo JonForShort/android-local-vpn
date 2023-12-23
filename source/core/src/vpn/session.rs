@@ -25,7 +25,10 @@
 
 use crate::vpn::{
     buffers::{Buffers, TcpBuffers, UdpBuffers},
-    mio_socket::{InternetProtocol as MioInternetProtocol, Socket as MioSocket, TransportProtocol as MioTransportProtocol},
+    mio_socket::{
+        InternetProtocol as MioInternetProtocol, Socket as MioSocket,
+        TransportProtocol as MioTransportProtocol,
+    },
     session_info::{InternetProtocol, SessionInfo, TransportProtocol},
     smoltcp_socket::{Socket as SmoltcpSocket, TransportProtocol as SmoltcpProtocol},
     vpn_device::VpnDevice,
@@ -48,7 +51,11 @@ pub(crate) struct Session<'a> {
 }
 
 impl<'a> Session<'a> {
-    pub(crate) fn new(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<Session<'a>> {
+    pub(crate) fn new(
+        session_info: &SessionInfo,
+        poll: &mut Poll,
+        token: Token,
+    ) -> Option<Session<'a>> {
         let mut device = VpnDevice::new();
         let interface = Self::create_interface(&mut device);
         let mut sockets = SocketSet::new([]);
@@ -66,7 +73,10 @@ impl<'a> Session<'a> {
         Some(session)
     }
 
-    fn create_smoltcp_socket<'b>(session_info: &SessionInfo, sockets: &mut SocketSet<'b>) -> Option<SmoltcpSocket> {
+    fn create_smoltcp_socket<'b>(
+        session_info: &SessionInfo,
+        sockets: &mut SocketSet<'b>,
+    ) -> Option<SmoltcpSocket> {
         let transport_protocol = match session_info.transport_protocol {
             TransportProtocol::Tcp => SmoltcpProtocol::Tcp,
             TransportProtocol::Udp => SmoltcpProtocol::Udp,
@@ -80,7 +90,11 @@ impl<'a> Session<'a> {
         )
     }
 
-    fn create_mio_socket(session_info: &SessionInfo, poll: &mut Poll, token: Token) -> Option<MioSocket> {
+    fn create_mio_socket(
+        session_info: &SessionInfo,
+        poll: &mut Poll,
+        token: Token,
+    ) -> Option<MioSocket> {
         let transport_protocol = match session_info.transport_protocol {
             TransportProtocol::Tcp => MioTransportProtocol::Tcp,
             TransportProtocol::Udp => MioTransportProtocol::Udp,

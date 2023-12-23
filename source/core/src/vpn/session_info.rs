@@ -63,7 +63,8 @@ impl SessionInfo {
                     let payload = ip_packet.payload();
                     let packet = TcpPacket::new_checked(payload).unwrap();
                     let source_ip: [u8; 4] = ip_packet.src_addr().as_bytes().try_into().unwrap();
-                    let destination_ip: [u8; 4] = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    let destination_ip: [u8; 4] =
+                        ip_packet.dst_addr().as_bytes().try_into().unwrap();
                     return Some(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),
@@ -75,7 +76,8 @@ impl SessionInfo {
                     let payload = ip_packet.payload();
                     let packet = UdpPacket::new_checked(payload).unwrap();
                     let source_ip: [u8; 4] = ip_packet.src_addr().as_bytes().try_into().unwrap();
-                    let destination_ip: [u8; 4] = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    let destination_ip: [u8; 4] =
+                        ip_packet.dst_addr().as_bytes().try_into().unwrap();
                     return Some(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),
@@ -104,7 +106,8 @@ impl SessionInfo {
                     let payload = ip_packet.payload();
                     let packet = TcpPacket::new_checked(payload).unwrap();
                     let source_ip: [u8; 16] = ip_packet.src_addr().as_bytes().try_into().unwrap();
-                    let destination_ip: [u8; 16] = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    let destination_ip: [u8; 16] =
+                        ip_packet.dst_addr().as_bytes().try_into().unwrap();
                     return Some(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),
@@ -116,7 +119,8 @@ impl SessionInfo {
                     let payload = ip_packet.payload();
                     let packet = UdpPacket::new_checked(payload).unwrap();
                     let source_ip: [u8; 16] = ip_packet.src_addr().as_bytes().try_into().unwrap();
-                    let destination_ip: [u8; 16] = ip_packet.dst_addr().as_bytes().try_into().unwrap();
+                    let destination_ip: [u8; 16] =
+                        ip_packet.dst_addr().as_bytes().try_into().unwrap();
                     return Some(SessionInfo {
                         source: SocketAddr::from((source_ip, packet.src_port())),
                         destination: SocketAddr::from((destination_ip, packet.dst_port())),

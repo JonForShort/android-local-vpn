@@ -160,7 +160,9 @@ impl<'a, 'b> SocketInstance<'a, 'b> {
     pub(crate) fn receive(&'b mut self, data: &mut [u8]) -> crate::Result<usize> {
         match &mut self.instance {
             SocketType::Tcp(socket) => Ok(socket.recv_slice(data)?),
-            SocketType::Udp(socket, _) => Ok(socket.recv_slice(data).and_then(|result| Ok(result.0))?),
+            SocketType::Udp(socket, _) => {
+                Ok(socket.recv_slice(data).and_then(|result| Ok(result.0))?)
+            }
         }
     }
 

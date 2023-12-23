@@ -55,7 +55,11 @@ enum Connection {
 }
 
 impl Socket {
-    pub(crate) fn new(transport_protocol: TransportProtocol, internet_protocol: InternetProtocol, remote_address: SocketAddr) -> Option<Socket> {
+    pub(crate) fn new(
+        transport_protocol: TransportProtocol,
+        internet_protocol: InternetProtocol,
+        remote_address: SocketAddr,
+    ) -> Option<Socket> {
         let socket = Self::create_socket(&transport_protocol, &internet_protocol);
 
         on_socket_created(socket.as_raw_fd());
@@ -69,7 +73,9 @@ impl Socket {
                 log::debug!("connected to host, address={:?}", remote_address);
             }
             Err(error) => {
-                if error.kind() == ErrorKind::WouldBlock || error.raw_os_error() == Some(libc::EINPROGRESS) {
+                if error.kind() == ErrorKind::WouldBlock
+                    || error.raw_os_error() == Some(libc::EINPROGRESS)
+                {
                     // do nothing.
                 } else {
                     log::error!(
@@ -137,7 +143,10 @@ impl Socket {
         }
     }
 
-    fn create_socket(transport_protocol: &TransportProtocol, internet_protocol: &InternetProtocol) -> socket2::Socket {
+    fn create_socket(
+        transport_protocol: &TransportProtocol,
+        internet_protocol: &InternetProtocol,
+    ) -> socket2::Socket {
         let domain = match internet_protocol {
             InternetProtocol::Ipv4 => socket2::Domain::IPV4,
             InternetProtocol::Ipv6 => socket2::Domain::IPV6,
@@ -160,7 +169,10 @@ impl Socket {
         socket
     }
 
-    fn create_connection(transport_protocol: &TransportProtocol, socket: &socket2::Socket) -> Connection {
+    fn create_connection(
+        transport_protocol: &TransportProtocol,
+        socket: &socket2::Socket,
+    ) -> Connection {
         match transport_protocol {
             TransportProtocol::Tcp => {
                 let tcp_stream = unsafe { TcpStream::from_raw_fd(socket.as_raw_fd()) };

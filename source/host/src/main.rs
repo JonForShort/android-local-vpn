@@ -97,7 +97,8 @@ fn bind_socket_to_interface(socket: i32, interface: &CString) {
     };
     if result == -1 {
         let error_code = unsafe { *libc::__errno_location() };
-        let error: std::io::Result<libc::c_int> = Err(std::io::Error::from_raw_os_error(error_code));
+        let error: std::io::Result<libc::c_int> =
+            Err(std::io::Error::from_raw_os_error(error_code));
         eprint!("failed to bind socket to interface, error={:?}", error);
     }
 }

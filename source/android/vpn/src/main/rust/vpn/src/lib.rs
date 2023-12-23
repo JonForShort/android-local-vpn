@@ -51,7 +51,11 @@ pub mod android {
     ///
     /// This function should only be used in jni context.
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(env: JNIEnv, class: JClass, object: JObject) {
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onCreateNative(
+        env: JNIEnv,
+        class: JClass,
+        object: JObject,
+    ) {
         android_logger::init_once(
             Config::default()
                 .with_tag("nativeVpn")
@@ -68,7 +72,10 @@ pub mod android {
     ///
     /// This function should only be used in jni context.
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onDestroyNative(_: JNIEnv, _: JClass) {
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onDestroyNative(
+        _: JNIEnv,
+        _: JClass,
+    ) {
         log::trace!("onDestroyNative");
         tun::destroy();
         SocketProtector::release();
@@ -80,7 +87,11 @@ pub mod android {
     ///
     /// This function should only be used in jni context.
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(_: JNIEnv, _: JClass, file_descriptor: i32) {
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStartVpn(
+        _: JNIEnv,
+        _: JClass,
+        file_descriptor: i32,
+    ) {
         log::trace!("onStartVpn, pid={}, fd={}", process::id(), file_descriptor);
         tun_callbacks::set_socket_created_callback(Some(on_socket_created));
         socket_protector!().start();
@@ -91,7 +102,10 @@ pub mod android {
     ///
     /// This function should only be used in jni context.
     #[no_mangle]
-    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStopVpn(_: JNIEnv, _: JClass) {
+    pub unsafe extern "C" fn Java_com_github_jonforshort_androidlocalvpn_vpn_LocalVpnService_onStopVpn(
+        _: JNIEnv,
+        _: JClass,
+    ) {
         log::trace!("onStopVpn, pid={}", process::id());
         tun::stop();
         socket_protector!().stop();

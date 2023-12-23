@@ -82,7 +82,10 @@ impl SocketProtector {
             log::trace!("socket protecting thread is started");
             if let Some(mut jni_context) = jni!().new_context() {
                 while is_thread_running.load(Ordering::SeqCst) {
-                    SocketProtector::handle_protect_socket_request(&receiver_channel, &mut jni_context);
+                    SocketProtector::handle_protect_socket_request(
+                        &receiver_channel,
+                        &mut jni_context,
+                    );
                 }
             }
             log::trace!("socket protecting thread is stopping");
