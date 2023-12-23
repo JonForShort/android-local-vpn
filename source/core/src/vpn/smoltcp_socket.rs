@@ -42,11 +42,11 @@ pub(crate) struct Socket {
 }
 
 impl Socket {
-    pub(crate) fn new<'a>(
+    pub(crate) fn new(
         transport_protocol: TransportProtocol,
         local_address: SocketAddr,
         remote_address: SocketAddr,
-        sockets: &mut SocketSet<'a>,
+        sockets: &mut SocketSet<'_>,
     ) -> Option<Socket> {
         let local_endpoint = IpEndpoint::from(local_address);
 
@@ -160,9 +160,7 @@ impl<'a, 'b> SocketInstance<'a, 'b> {
     pub(crate) fn receive(&'b mut self, data: &mut [u8]) -> crate::Result<usize> {
         match &mut self.instance {
             SocketType::Tcp(socket) => Ok(socket.recv_slice(data)?),
-            SocketType::Udp(socket, _) => {
-                Ok(socket.recv_slice(data).and_then(|result| Ok(result.0))?)
-            }
+            SocketType::Udp(socket, _) => Ok(socket.recv_slice(data).map(|result| result.0)?),
         }
     }
 

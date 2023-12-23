@@ -73,9 +73,9 @@ impl<'a> Session<'a> {
         Some(session)
     }
 
-    fn create_smoltcp_socket<'b>(
+    fn create_smoltcp_socket(
         session_info: &SessionInfo,
-        sockets: &mut SocketSet<'b>,
+        sockets: &mut SocketSet<'_>,
     ) -> Option<SmoltcpSocket> {
         let transport_protocol = match session_info.transport_protocol {
             TransportProtocol::Tcp => SmoltcpProtocol::Tcp,
