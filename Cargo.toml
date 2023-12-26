@@ -1,3 +1,0 @@
-[workspace]
-resolver = "2"
-members = ["source/android/vpn/src/main/rust/vpn", "source/core", "source/host"]
